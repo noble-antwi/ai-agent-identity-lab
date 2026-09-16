@@ -1,0 +1,36 @@
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+*secret*
+*token*
+.vault-token
+credentials*
+
+# The broad patterns above also match project folder names, which would silently
+# drop them from every commit. Re-include the ones that are deliberately named.
+!07-secretless-cloud-access/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+
+# Kubernetes
+kubeconfig*
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Logs
+*.log
