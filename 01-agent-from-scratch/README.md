@@ -22,8 +22,9 @@ decide.
 
 ![Ask my SIEM data flow](images/agent-flow.svg)
 
-*Claude never connects to the lab. My code runs every tool and decides what
-Claude gets to see.*
+*One question in eight steps. Claude never connects to the lab: my code runs
+every tool, under the agent's own read-only identity, and decides what Claude
+gets to see.*
 
 Three parts:
 
@@ -82,6 +83,12 @@ controls what the agent can know, so the tool and its account are the thing to
 secure.
 
 ### Stage 1b: reaching the indexer without exposing it
+
+![How the laptop reaches a database that only answers from inside](images/agent-doors.svg)
+
+*The indexer has no door on the network side. The laptop comes in through the
+SSH door it already holds a key for, and sshd makes the call from inside
+SIEM01, where the indexer does answer.*
 
 ![The Wazuh indexer listens on localhost only](images/agent-03-indexer-localhost-only.png)
 

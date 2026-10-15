@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 580" width="960" height="580" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <!-- Card and header -->
+  <rect x="0.5" y="0.5" width="959" height="579" rx="16" fill="#FFFFFF" stroke="#D5DEE8"/>
+  <path d="M16 0.5 H944 A15.5 15.5 0 0 1 959.5 16 V84 H0.5 V16 A15.5 15.5 0 0 1 16 0.5 Z" fill="#08152F"/>
+  <text x="32" y="44" font-size="24" font-weight="700" fill="#FFFFFF">Reaching the Wazuh database</text>
+  <text x="32" y="68" font-size="14" fill="#2DD4E8">It only answers calls that start inside SIEM01. The tunnel makes the laptop's call start inside.</text>
+
+  <!-- Laptop -->
+  <rect x="40" y="140" width="230" height="250" rx="12" fill="#FFFFFF" stroke="#0E7490" stroke-width="1.5"/>
+  <circle cx="155" cy="186" r="26" fill="#E0F2F7"/>
+  <rect x="139" y="174" width="32" height="20" rx="2" fill="none" stroke="#0E7490" stroke-width="2"/>
+  <path d="M132 196 H178 L183 202 H127 Z" fill="#0E7490"/>
+  <text x="155" y="240" font-size="17" font-weight="700" fill="#08152F" text-anchor="middle">Your laptop</text>
+  <text x="155" y="260" font-size="12" fill="#5B6B85" text-anchor="middle">on Tailscale</text>
+  <rect x="56" y="280" width="198" height="30" rx="6" fill="#08152F"/>
+  <text x="155" y="300" font-size="11.5" fill="#2DD4E8" text-anchor="middle" font-family="Consolas, Menlo, monospace">curl https://localhost:9200</text>
+  <text x="155" y="338" font-size="11.5" fill="#1B2F5E" text-anchor="middle">localhost:9200 is the near</text>
+  <text x="155" y="356" font-size="11.5" fill="#1B2F5E" text-anchor="middle">end of the tunnel</text>
+
+  <!-- SIEM01 building -->
+  <rect x="420" y="120" width="500" height="300" rx="14" fill="#F4F6FA" stroke="#1B2F5E" stroke-width="2"/>
+  <text x="444" y="152" font-size="15" font-weight="700" fill="#08152F">SIEM01 · 192.168.20.2</text>
+
+  <!-- Door A: refused -->
+  <line x1="270" y1="205" x2="404" y2="205" stroke="#B0422A" stroke-width="2" stroke-dasharray="7 5"/>
+  <line x1="410" y1="195" x2="430" y2="215" stroke="#B0422A" stroke-width="3"/>
+  <line x1="430" y1="195" x2="410" y2="215" stroke="#B0422A" stroke-width="3"/>
+  <text x="340" y="195" font-size="12" font-weight="700" fill="#B0422A" text-anchor="middle" font-family="Consolas, Menlo, monospace">192.168.20.2:9200</text>
+  <text x="340" y="226" font-size="11.5" fill="#B0422A" text-anchor="middle">"Could not connect"</text>
+  <text x="444" y="196" font-size="11.5" fill="#B0422A">No door for 9200 on the network side</text>
+
+  <!-- Door B: SSH -->
+  <rect x="412" y="312" width="16" height="42" rx="2" fill="#0F6E56"/>
+  <rect x="270" y="323" width="142" height="20" rx="10" fill="#D6EEF4" stroke="#0E7490" stroke-width="1.5"/>
+  <line x1="274" y1="333" x2="400" y2="333" stroke="#0E7490" stroke-width="2.5"/>
+  <text x="340" y="313" font-size="12" font-weight="700" fill="#0E7490" text-anchor="middle">SSH · port 22</text>
+  <text x="340" y="362" font-size="11.5" fill="#1B2F5E" text-anchor="middle">a door you hold a key for</text>
+
+  <!-- Inside path -->
+  <path d="M428 333 H640 V232 H678" fill="none" stroke="#0E7490" stroke-width="2.5"/>
+  <polygon points="690,232 677,226 677,238" fill="#0E7490"/>
+  <text x="534" y="323" font-size="11.5" fill="#0E7490" text-anchor="middle">sshd makes the call</text>
+  <text x="534" y="352" font-size="11.5" fill="#0E7490" text-anchor="middle">from inside SIEM01</text>
+
+  <!-- Database -->
+  <rect x="690" y="176" width="200" height="112" rx="10" fill="#E3F4EE" stroke="#0F6E56" stroke-width="2"/>
+  <text x="790" y="208" font-size="15" font-weight="700" fill="#0F6E56" text-anchor="middle">Wazuh database</text>
+  <text x="790" y="233" font-size="13" fill="#08152F" text-anchor="middle" font-family="Consolas, Menlo, monospace">127.0.0.1:9200</text>
+  <text x="790" y="256" font-size="11.5" fill="#0F6E56" text-anchor="middle">answers inside calls only</text>
+  <text x="790" y="274" font-size="11.5" fill="#0F6E56" text-anchor="middle">(proven with ss -tlnp)</text>
+
+  <!-- Speech bubble -->
+  <polygon points="780,306 790,294 800,306" fill="#FFFFFF" stroke="#0E7490" stroke-width="1.5"/>
+  <rect x="700" y="305" width="180" height="56" rx="10" fill="#FFFFFF" stroke="#0E7490" stroke-width="1.5"/>
+  <line x1="781" y1="306" x2="799" y2="306" stroke="#FFFFFF" stroke-width="3"/>
+  <text x="790" y="328" font-size="13" font-weight="700" fill="#08152F" text-anchor="middle">"Who are you?"</text>
+  <text x="790" y="348" font-size="12" fill="#0E7490" text-anchor="middle" font-family="Consolas, Menlo, monospace">401 Unauthorized</text>
+  <text x="444" y="402" font-size="11.5" fill="#5B6B85">Reaching the desk is not the same as being let in. The login is checked next.</text>
+
+  <!-- Legend -->
+  <rect x="40" y="450" width="280" height="96" rx="10" fill="#ECF6F9"/>
+  <text x="58" y="478" font-size="13" font-weight="700" fill="#08152F" font-family="Consolas, Menlo, monospace">127.0.0.1</text>
+  <text x="58" y="502" font-size="12" fill="#1B2F5E">An address that means "this same</text>
+  <text x="58" y="520" font-size="12" fill="#1B2F5E">machine". Only SIEM01 can call it.</text>
+  <rect x="340" y="450" width="280" height="96" rx="10" fill="#ECF6F9"/>
+  <text x="358" y="478" font-size="13" font-weight="700" fill="#08152F">SSH tunnel</text>
+  <text x="358" y="502" font-size="12" fill="#1B2F5E">The laptop's call rides inside SSH</text>
+  <text x="358" y="520" font-size="12" fill="#1B2F5E">and comes out on SIEM01 itself.</text>
+  <rect x="640" y="450" width="280" height="96" rx="10" fill="#ECF6F9"/>
+  <text x="658" y="478" font-size="13" font-weight="700" fill="#08152F">401 vs 403</text>
+  <text x="658" y="502" font-size="12" fill="#1B2F5E">401: reached the desk, no ID shown.</text>
+  <text x="658" y="520" font-size="12" fill="#1B2F5E">403: ID checked, not allowed.</text>
+</svg>
