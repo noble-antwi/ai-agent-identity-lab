@@ -50,7 +50,7 @@ Three parts:
 |---|---|---|
 | 0 | Virtual environment, `anthropic` and `python-dotenv`, key in `.env` | Done 2026-10-13 |
 | 1a | The loop by hand, with a fake Wazuh tool returning three made-up alerts | Done 2026-10-13 |
-| 1b | Swap the fake tool for a real, read-only Wazuh query | In progress: tunnel proven, role and account created, mapping next |
+| 1b | Swap the fake tool for a real, read-only Wazuh query | In progress: tunnel, role, account and mapping proven; query code next |
 | 2 | Add a read-only AD lookup tool | Not started |
 | 3 | Move the loop to the Anthropic SDK's Tool Runner | Not started |
 
@@ -111,6 +111,19 @@ the `Unauthorized` (401) above: 401 means "I do not know who you are"
 (authentication failed), 403 means "I know who you are, and the answer is no"
 (authorization failed). The password never appears on the command line: curl
 prompts for it.*
+
+![The role mapped to the agent's account](images/agent-07-role-mapped.png)
+
+*`svc-ask-siem` mapped directly as a user to `agent-read-alerts`. No backend
+roles: the account lives only in the indexer.*
+
+![After mapping: the same request succeeds](images/agent-08-after-mapping-count.png)
+
+*The identical command after mapping returns `"count":460349` across 120
+shards with none failed. Same account, same password, same question: the only
+change is the role, so the role is what grants the access. 460,349 alerts is
+also why the tool will never hand the model everything: it returns a capped,
+filtered slice with a total.*
 
 ## What I learned
 
