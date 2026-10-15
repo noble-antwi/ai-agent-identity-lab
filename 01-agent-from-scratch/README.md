@@ -125,6 +125,14 @@ change is the role, so the role is what grants the access. 460,349 alerts is
 also why the tool will never hand the model everything: it returns a capped,
 filtered slice with a total.*
 
+![The boundary holds: archives refused](images/agent-09-archives-denied-403.png)
+
+*The same account, minutes later, asks to count `wazuh-archives-*` and gets
+`403`. The archives hold every event Wazuh collects, not only the ones a rule
+raised. The role names alerts only, so the boundary holds, whoever or whatever
+is holding the password. `backend_roles=[]` is expected: the role is mapped to
+the user directly, not through a backend role.*
+
 ## What I learned
 
 - **An agent is three parts: a model, a loop, and tools.** The model never runs
