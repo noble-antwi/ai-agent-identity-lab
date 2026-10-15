@@ -50,7 +50,7 @@ Three parts:
 |---|---|---|
 | 0 | Virtual environment, `anthropic` and `python-dotenv`, key in `.env` | Done 2026-10-13 |
 | 1a | The loop by hand, with a fake Wazuh tool returning three made-up alerts | Done 2026-10-13 |
-| 1b | Swap the fake tool for a real, read-only Wazuh query | In progress: tunnel proven, role next |
+| 1b | Swap the fake tool for a real, read-only Wazuh query | In progress: tunnel proven, role created, account next |
 | 2 | Add a read-only AD lookup tool | Not started |
 | 3 | Move the loop to the Anthropic SDK's Tool Runner | Not started |
 
@@ -94,6 +94,13 @@ refused, by design.*
 *Through `ssh -N -L 9200:127.0.0.1:9200`, the laptop reaches the indexer, which
 answers `Unauthorized` to a request with no login. The path works and the
 door is still locked.*
+
+![The agent's role: read on alerts, nothing else](images/agent-05-role-created.png)
+
+*Role `agent-read-alerts` as saved: no cluster permissions, `read` on
+`wazuh-alerts-*` only, no document or field restrictions yet, no tenants. The
+archives index is not listed, so a request for it is refused by the indexer
+whoever sends it.*
 
 ## What I learned
 
