@@ -50,7 +50,7 @@ Three parts:
 |---|---|---|
 | 0 | Virtual environment, `anthropic` and `python-dotenv`, key in `.env` | Done 2026-10-13 |
 | 1a | The loop by hand, with a fake Wazuh tool returning three made-up alerts | Done 2026-10-13 |
-| 1b | Swap the fake tool for a real, read-only Wazuh query | In progress: tunnel proven, role created, account next |
+| 1b | Swap the fake tool for a real, read-only Wazuh query | In progress: tunnel proven, role and account created, mapping next |
 | 2 | Add a read-only AD lookup tool | Not started |
 | 3 | Move the loop to the Anthropic SDK's Tool Runner | Not started |
 
@@ -101,6 +101,16 @@ door is still locked.*
 `wazuh-alerts-*` only, no document or field restrictions yet, no tenants. The
 archives index is not listed, so a request for it is refused by the indexer
 whoever sends it.*
+
+![Before mapping: the account is known but has no rights](images/agent-06-before-mapping-403.png)
+
+*Before the role is mapped, `svc-ask-siem` with its correct password asks for
+a count of alerts and gets `403` with `no permissions for
+[indices:data/read/search]`, naming the user and `backend_roles=[]`. Compare
+the `Unauthorized` (401) above: 401 means "I do not know who you are"
+(authentication failed), 403 means "I know who you are, and the answer is no"
+(authorization failed). The password never appears on the command line: curl
+prompts for it.*
 
 ## What I learned
 
