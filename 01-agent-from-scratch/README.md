@@ -20,11 +20,11 @@ decide.
 
 ## Architecture
 
-![Ask my SIEM data flow](images/agent-flow.svg)
+![Ask my SIEM data flow](images/agent-flow-animated.svg)
 
 *One question in eight steps. Claude never connects to the lab: my code runs
 every tool, under the agent's own read-only identity, and decides what Claude
-gets to see.*
+gets to see. Static versions of both diagrams sit beside the animated ones in `images/`, and `images/build_animations.py` regenerates the motion from them.*
 
 Three parts:
 
@@ -84,7 +84,7 @@ secure.
 
 ### Stage 1b: reaching the indexer without exposing it
 
-![How the laptop reaches a database that only answers from inside](images/agent-doors.svg)
+![How the laptop reaches a database that only answers from inside](images/agent-doors-animated.svg)
 
 *The indexer has no door on the network side. The laptop comes in through the
 SSH door it already holds a key for, and sshd makes the call from inside
