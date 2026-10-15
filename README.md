@@ -12,7 +12,7 @@ All work uses lab accounts, test tenants, and fake data only.
 
 | # | Project | Status |
 |---|---------|--------|
-| 01 | Agent from scratch | Not started |
+| 01 | [Agent from scratch: "Ask my SIEM"](01-agent-from-scratch/) | In progress (stage 1a done) |
 | 02 | Okta MCP server | Not started |
 | 03 | Agent identity with Okta + Vault | Not started |
 | 04 | Service account hunter | Not started |

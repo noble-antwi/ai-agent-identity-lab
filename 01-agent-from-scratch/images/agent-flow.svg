@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 420" width="680" height="420" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <rect x="1" y="1" width="678" height="418" rx="10" fill="#FFFFFF" stroke="#D5DEE8" stroke-width="1"/>
+  <text x="24" y="34" font-size="16" font-weight="700" fill="#08152F">Ask my SIEM: what talks to what</text>
+
+  <!-- Laptop -->
+  <rect x="24" y="96" width="200" height="246" rx="8" fill="#ECF6F9" stroke="#1B2F5E" stroke-width="1.5"/>
+  <text x="40" y="124" font-size="14" font-weight="700" fill="#08152F">Laptop</text>
+  <text x="40" y="148" font-size="12" fill="#1B2F5E">agent.py runs the loop</text>
+  <text x="40" y="168" font-size="12" fill="#1B2F5E">and the tools</text>
+  <text x="40" y="196" font-size="12" fill="#1B2F5E">.env holds the API key</text>
+  <text x="40" y="216" font-size="12" fill="#1B2F5E">(git-ignored)</text>
+  <text x="40" y="294" font-size="12" fill="#0E7490">localhost:9200 is the</text>
+  <text x="40" y="312" font-size="12" fill="#0E7490">near end of the tunnel</text>
+
+  <!-- Anthropic -->
+  <rect x="436" y="56" width="220" height="96" rx="8" fill="#FFFFFF" stroke="#1B2F5E" stroke-width="1.5"/>
+  <text x="452" y="82" font-size="14" font-weight="700" fill="#08152F">Anthropic API (internet)</text>
+  <text x="452" y="106" font-size="12" fill="#1B2F5E">Claude reads, decides, writes</text>
+  <text x="452" y="126" font-size="12" fill="#1B2F5E">Never connects to the lab</text>
+
+  <!-- Laptop to Anthropic -->
+  <line x1="224" y1="108" x2="428" y2="108" stroke="#1B2F5E" stroke-width="1.5"/>
+  <polygon points="436,108 426,103 426,113" fill="#1B2F5E"/>
+  <text x="236" y="100" font-size="11" fill="#1B2F5E">question + tool results</text>
+  <line x1="232" y1="136" x2="436" y2="136" stroke="#1B2F5E" stroke-width="1.5"/>
+  <polygon points="224,136 234,131 234,141" fill="#1B2F5E"/>
+  <text x="236" y="156" font-size="11" fill="#1B2F5E">answer, or "run this tool"</text>
+
+  <!-- SIEM01 -->
+  <rect x="436" y="216" width="220" height="160" rx="8" fill="#FFFFFF" stroke="#1B2F5E" stroke-width="1.5"/>
+  <text x="452" y="240" font-size="14" font-weight="700" fill="#08152F">SIEM01 192.168.20.2</text>
+  <text x="452" y="262" font-size="12" fill="#1B2F5E">sshd forwards to</text>
+  <rect x="452" y="274" width="188" height="64" rx="6" fill="#E3F4EE" stroke="#0F6E56" stroke-width="1.5"/>
+  <text x="464" y="296" font-size="12" font-weight="700" fill="#0F6E56">Wazuh indexer</text>
+  <text x="464" y="314" font-size="12" fill="#0F6E56">listens on 127.0.0.1:9200</text>
+  <text x="464" y="330" font-size="11" fill="#0F6E56">only, by design</text>
+  <text x="452" y="362" font-size="11" fill="#1B2F5E">Agent's own login, read-only role</text>
+
+  <!-- Tunnel -->
+  <line x1="224" y1="256" x2="426" y2="256" stroke="#0E7490" stroke-width="4"/>
+  <polygon points="436,256 424,249 424,263" fill="#0E7490"/>
+  <text x="236" y="246" font-size="11" font-weight="700" fill="#0E7490">SSH tunnel over Tailscale</text>
+  <text x="236" y="274" font-size="11" fill="#0E7490">ssh -N -L 9200:127.0.0.1:9200</text>
+
+  <!-- Denied direct path -->
+  <line x1="224" y1="326" x2="420" y2="326" stroke="#B0422A" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <line x1="414" y1="318" x2="430" y2="334" stroke="#B0422A" stroke-width="2.5"/>
+  <line x1="430" y1="318" x2="414" y2="334" stroke="#B0422A" stroke-width="2.5"/>
+  <text x="236" y="318" font-size="11" fill="#B0422A">direct 192.168.20.2:9200</text>
+  <text x="236" y="344" font-size="11" fill="#B0422A">refused</text>
+
+  <text x="24" y="402" font-size="12" fill="#08152F">The facts come from the tool, inside the lab. The words come from Claude, outside it.</text>
+</svg>
