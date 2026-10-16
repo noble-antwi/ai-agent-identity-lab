@@ -44,6 +44,9 @@ Three parts:
 | The Wazuh indexer stays bound to `127.0.0.1`. The agent reaches it through an SSH tunnel. | Opening port 9200 to the network would let any lab host try credentials against the store of every log I collect. | SC-7 boundary protection, AC-17 remote access |
 | The API key lives in a git-ignored `.env`, with a gitleaks pre-commit hook as backstop. | Moves to Vault in project 3. | IA-5 authenticator management |
 | No tool can change anything. The answer ends with what a human should check. | Project 1 is read-only by rule. Write actions need an approval step, which comes later. | AC-6, AU-6 review by a human |
+| The agent checks the indexer's certificate against Wazuh's own CA and calls it at `127.0.0.1`, the only address on the certificate. No `-k`, no verification turned off. | An agent that skips the check can be fed fake alerts by anything that answers on that port, and it would report them as fact. Proven both ways: the real certificate passes, and calling it as `localhost` is rejected with a hostname mismatch. | SC-8, SC-23 session authenticity |
+| Only twelve named fields leave the lab. The raw log line (`full_log`) never does. Results are capped at 50 alerts plus a per-rule count of every match. | Whatever a tool returns is sent to the model provider. Send the least that answers the question. | AC-4 information flow, SA-8 |
+| The system prompt tells the model that text inside alerts is data, never instructions. | Log fields can contain attacker-chosen text. This is the first, weakest layer against prompt injection; project 9 tests it properly. | SI-10 |
 
 ## Stages
 
@@ -51,20 +54,38 @@ Three parts:
 |---|---|---|
 | 0 | Virtual environment, `anthropic` and `python-dotenv`, key in `.env` | Done 2026-10-13 |
 | 1a | The loop by hand, with a fake Wazuh tool returning three made-up alerts | Done 2026-10-13 |
-| 1b | Swap the fake tool for a real, read-only Wazuh query | In progress: tunnel, role, account and mapping proven; query code next |
+| 1b | Swap the fake tool for a real, read-only Wazuh query | Code done 2026-10-15: real search, verified TLS, terminal display; first real run next |
 | 2 | Add a read-only AD lookup tool | Not started |
 | 3 | Move the loop to the Anthropic SDK's Tool Runner | Not started |
 
-## How to run (stage 1a)
+## How to run
 
-From Git Bash, inside this folder:
+Once, in Git Bash inside this folder:
+
+```bash
+python -m venv .venv
+source .venv/Scripts/activate
+pip install -r requirements.txt
+```
+
+Then, every time:
+
+1. Open the tunnel in a second window and leave it open:
+   `ssh -N -L 9200:127.0.0.1:9200 nantwi@192.168.20.2`
+2. Ask a question:
 
 ```bash
 source .venv/Scripts/activate
 python agent.py "Is anything unusual happening on WKS01 in the last 24 hours?"
 ```
 
-`.env` beside `agent.py` must contain `ANTHROPIC_API_KEY=...`. It is never committed.
+Files this needs that are never committed:
+
+- `.env` beside `agent.py`: `ANTHROPIC_API_KEY`, `WAZUH_INDEXER_USER`, `WAZUH_INDEXER_PASSWORD` (single-quoted)
+- `certs/wazuh-root-ca.pem`: Wazuh's public CA certificate, copied from `/etc/wazuh-indexer/certs/root-ca.pem` on SIEM01. The `.pem`, never the `.key`.
+
+`agent.py` is the agent: the brief, the tool, the loop. `display.py` only draws it
+in the terminal with the `rich` library and changes nothing about how it thinks.
 
 ## Evidence
 
@@ -170,3 +191,17 @@ Python could not find it.*
 - `curl https://192.168.20.2:9200` was refused. Not a network problem: the
   dashboard on port 443 answered over the same path. The indexer is bound to
   localhost, which led to the tunnel decision above.
+- The certificate file is not where the docs usually say. `indexer.pem` did not
+  exist; reading `opensearch.yml` showed the real path, `wazuh-indexer.pem`.
+  Ask the configuration, do not guess.
+- Windows curl refused the indexer with `the revocation status is unknown`.
+  Wazuh's homemade CA publishes no revocation list, and Windows' TLS engine
+  (schannel) treats that as a failure. `--ssl-no-revoke` skips only that check.
+  The design debt it exposes: a stolen indexer certificate could not be revoked,
+  only replaced by re-issuing from a new CA.
+- Python 3.13+ refused the same CA: `CA cert does not include key usage
+  extension`. Its default strict mode wants modern certificate labels Wazuh's
+  CA lacks. The code relaxes only that flag; the chain and the address are still
+  checked, and a deliberate test against `localhost` still fails as it should.
+- The first display test crashed on Windows' old default text encoding, which
+  cannot print `✓`. `display.py` switches its output to UTF-8.
