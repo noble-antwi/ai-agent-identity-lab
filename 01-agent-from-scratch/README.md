@@ -1,6 +1,6 @@
 # 01. Agent from scratch: "Ask my SIEM"
 
-**Status:** In progress. Stage 1a done, stage 1b under way.
+**Status:** In progress. Stages 1a and 1b done: the agent answers from real Wazuh data. Stage 2 (AD lookup) next.
 
 ## Goal
 
@@ -54,7 +54,7 @@ Three parts:
 |---|---|---|
 | 0 | Virtual environment, `anthropic` and `python-dotenv`, key in `.env` | Done 2026-10-13 |
 | 1a | The loop by hand, with a fake Wazuh tool returning three made-up alerts | Done 2026-10-13 |
-| 1b | Swap the fake tool for a real, read-only Wazuh query | Code done 2026-10-15: real search, verified TLS, terminal display; first real run next |
+| 1b | Swap the fake tool for a real, read-only Wazuh query | Done 2026-10-15: first real run against SIEM01 |
 | 2 | Add a read-only AD lookup tool | Not started |
 | 3 | Move the loop to the Anthropic SDK's Tool Runner | Not started |
 
@@ -176,6 +176,28 @@ both times, and the agent said it could not answer rather than inventing a
 picture of WKS01: "I have no alerts, rule counts or timestamps to cite, so I
 won't guess." It retried once, a wasted round, so the error text now tells it
 that retrying will not help until a human fixes the connection.*
+
+### Stage 1b: the first real run
+
+![Round 1: the real search](images/agent-12-first-real-run-search.png)
+
+*Claude fills the two blanks (WKS01, 24 hours). The tool searches as
+`svc-ask-siem` through the tunnel with the certificate checked, and finds 694
+alerts across 17 rules. Claude receives a per-rule count of all 694 plus the 50
+highest-level alerts: 14,481 characters, not 694 raw events.*
+
+![Round 2: the answer](images/agent-13-first-real-run-answer.png)
+
+*The answer separates what it saw (50 alerts) from what it only counted (all
+694), cites rule ids and times for every claim, and labels its one timing-based
+inference as a guess. It also says what it could not see: command lines, file
+names and accounts. Those fields are deliberately not sent (see design
+decisions), and this is the cost of that choice made visible.*
+
+![The hand-off to a human](images/agent-14-first-real-run-next-steps.png)
+
+*It ends with what a human should check, and changes nothing. Two rounds,
+8,064 tokens in, 2,078 out.*
 
 ## What I learned
 
