@@ -161,6 +161,22 @@ raised. The role names alerts only, so the boundary holds, whoever or whatever
 is holding the password. `backend_roles=[]` is expected: the role is mapped to
 the user directly, not through a backend role.*
 
+![The laptop verifies the indexer's certificate](images/agent-10-tls-verified-401.png)
+
+*No `-k`: curl checks the indexer's certificate against Wazuh's CA, at the one
+address printed on it, and gets through to the indexer, which asks for a login
+(401). Getting an answer at all is the proof the certificate passed.*
+
+### Stage 1b: the first real run, with the tunnel down
+
+![The agent fails honestly when Wazuh is unreachable](images/agent-11-tunnel-down-no-guessing.png)
+
+*The first real run happened with the tunnel closed. The tool returned an error
+both times, and the agent said it could not answer rather than inventing a
+picture of WKS01: "I have no alerts, rule counts or timestamps to cite, so I
+won't guess." It retried once, a wasted round, so the error text now tells it
+that retrying will not help until a human fixes the connection.*
+
 ## What I learned
 
 - **An agent is three parts: a model, a loop, and tools.** The model never runs

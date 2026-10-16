@@ -188,7 +188,8 @@ def run_tool(name: str, tool_input: dict) -> tuple[str, bool]:
     except urllib.error.HTTPError as e:  # The indexer answered, and said no.
         return f"Error: Wazuh refused the search (HTTP {e.code}).", True
     except urllib.error.URLError as e:  # Never reached it, or its certificate failed.
-        return f"Error: could not reach Wazuh ({e.reason}). Is the SSH tunnel open?", True
+        return (f"Error: could not reach Wazuh ({e.reason}). Is the SSH tunnel open? "
+                "Retrying will not help until a human fixes the connection."), True
 
 
 # 5. THE LOOP. Ask Claude; if it wants a tool, run it and hand back the result;
