@@ -98,12 +98,16 @@ Then open the link it prints. It shows each step live as it happens: Claude
 thinking, the order it places from the menu, what Wazuh returned (per-rule bar
 chart, the 50 alerts Claude received), and the answer.
 
-A live flow strip across the top tells the same story as the animated diagram,
-driven by the real run: a packet travels Claude, agent.py, the SSH tunnel and
-Wazuh as each event arrives, labelled with what it carries ("question + menu",
-"order: WKS01, 24", "as svc-ask-siem", "709 alerts", "the answer"). Motion is
-switched off for anyone whose system asks for reduced motion, and the strip
-skips ahead rather than lag when the tab is in the background.
+The agent has its own animated logo, a shield with a radar sweep inside, and it
+reacts to what the agent is doing: a slow cyan sweep while idle or thinking,
+fast and green while searching Wazuh, gold while writing, a drawn check when the
+answer is ready, a red cross on errors. When a question starts, the logo glides
+from the centre of the page into a side panel that stays beside the results
+rather than over them. That panel shows the live pipeline (Claude, agent.py,
+SSH tunnel, Wazuh, with a packet travelling between them as each event
+arrives), what the packet is carrying, and a running clock, rounds, alerts and
+tokens. Motion is switched off for anyone whose system asks for reduced motion,
+and the panel skips ahead rather than lag when the tab is in the background.
 
 **One agent, two faces.** The loop lives once, in `agent.run_agent()`, and reports
 each step as an event. `agent.py`'s terminal face and `web.py` both consume the

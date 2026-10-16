@@ -16,6 +16,7 @@ Security choices, because a web page in front of an agent is a new door:
 """
 
 import json
+import os
 import secrets
 import socket
 from pathlib import Path
@@ -29,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 import agent
 
 HERE = Path(__file__).resolve().parent
-PORT = 8765
+PORT = int(os.environ.get("ASK_SIEM_PORT", "8765"))  # Override only if 8765 is taken.
 TOKEN = secrets.token_urlsafe(24)  # New every start. Never stored anywhere.
 
 CSP = ("default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "

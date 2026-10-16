@@ -8,90 +8,17 @@
 
 const TOKEN = new URLSearchParams(location.search).get("token") || "";
 const $ = (sel) => document.querySelector(sel);
+const CALM = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 const timeline = $("#timeline");
 const input = $("#q");
 const go = $("#go");
+const avatar = $("#avatar");
 
 let source = null;
 let pending = null;   // the card currently showing a spinner
 let started = 0;
-let clock = 0;
-
-const CALM = matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-// ---------- the live flow strip: a packet that travels as the run happens ----------
-// Nodes, left to right: 0 Claude · 1 agent.py · 2 SSH tunnel · 3 Wazuh
-const flow = {
-  box: $("#flow"),
-  track: $("#track"),
-  nodes: [...document.querySelectorAll("#track .node")],
-  packet: $("#packet"),
-  label: $("#packet-label"),
-  caption: $("#flow-caption"),
-  at: 1,
-  queue: Promise.resolve(),
-
-  x(i) {
-    const t = this.track.getBoundingClientRect();
-    const o = this.nodes[i].querySelector(".orb").getBoundingClientRect();
-    return o.left - t.left + o.width / 2;
-  },
-  mark(i, state) {
-    this.nodes.forEach((n) => n.classList.remove("active", "busy", "done", "fail"));
-    if (i !== null) this.nodes[i].classList.add(state);
-  },
-  say(html) { this.caption.innerHTML = html; },   // only ever fixed strings from this file
-
-  reset() {
-    this.box.hidden = false;
-    this.queue = Promise.resolve();
-    this.at = 1;
-    this.packet.className = "packet";
-    this.packet.style.left = `${this.x(1)}px`;
-    this.mark(1, "active");
-  },
-
-  // Queue a trip through a list of nodes. Trips run one after another.
-  travel(path, kind, text, after) {
-    this.queue = this.queue.then(() => new Promise((done) => {
-      this.packet.className = `packet on ${kind}`;
-      this.label.textContent = text;
-      const frames = [this.at, ...path].map((i) => ({ left: `${this.x(i)}px` }));
-      const finish = () => {
-        this.at = path[path.length - 1];
-        this.packet.style.left = `${this.x(this.at)}px`;
-        if (after) after();
-        done();
-      };
-      // Browsers pause animations in background tabs; never let the strip fall
-      // behind the real run. Skip the trip, or cut it short if it stalls.
-      if (CALM || document.hidden) return finish();
-      const duration = 520 * path.length;
-      const trip = this.packet.animate(frames, {
-        duration,
-        easing: "cubic-bezier(.45,.05,.3,1)",
-        fill: "forwards",
-      });
-      let ended = false;
-      const end = () => { if (!ended) { ended = true; trip.cancel(); finish(); } };
-      trip.onfinish = end;
-      setTimeout(end, duration + 400);
-    }));
-  },
-};
-addEventListener("resize", () => { if (!flow.box.hidden) flow.packet.style.left = `${flow.x(flow.at)}px`; });
-
-// ---------- numbers that count up ----------
-function countUp(node, to) {
-  if (CALM) { node.textContent = to.toLocaleString(); return; }
-  const t0 = performance.now();
-  const step = (now) => {
-    const p = Math.min(1, (now - t0) / 900);
-    node.textContent = Math.round(to * (1 - Math.pow(1 - p, 3))).toLocaleString();
-    if (p < 1) requestAnimationFrame(step);
-  };
-  requestAnimationFrame(step);
-}
+let ticker = 0;
 
 // ---------- small DOM helpers ----------
 function el(tag, cls, text) {
@@ -114,13 +41,11 @@ function card(kind, icon, title, sub, live) {
     const skel = el("div", "skel");
     skel.append(el("i"), el("i"), el("i"));
     c.append(skel);
-  }
-  timeline.append(c);
-  c.scrollIntoView({ behavior: "smooth", block: "end" });
-  if (live) {
     c.dataset.t0 = performance.now();
     pending = c;
   }
+  timeline.append(c);
+  c.scrollIntoView({ behavior: CALM ? "auto" : "smooth", block: "nearest" });
   return c;
 }
 
@@ -141,6 +66,112 @@ function levelClass(level) {
   if (level >= 7) return "l-mid";
   if (level >= 4) return "l-low";
   return "";
+}
+
+function countUp(node, to) {
+  if (CALM) { node.textContent = to.toLocaleString(); return; }
+  const t0 = performance.now();
+  const step = (now) => {
+    const p = Math.min(1, (now - t0) / 900);
+    node.textContent = Math.round(to * (1 - Math.pow(1 - p, 3))).toLocaleString();
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+// ---------- the agent's live panel ----------
+// Stations, top to bottom: 0 Claude · 1 agent.py · 2 SSH tunnel · 3 Wazuh
+const panel = {
+  rail: $("#rail"),
+  pipe: $("#pipe"),
+  stations: [...document.querySelectorAll("#pipe .st")],
+  packet: $("#packet"),
+  carry: $("#carry"),
+  kicker: $("#kicker"),
+  title: $("#state-title"),
+  text: $("#state-text"),
+  at: 1,
+  queue: Promise.resolve(),
+
+  y(i) {
+    const p = this.pipe.getBoundingClientRect();
+    const o = this.stations[i].querySelector(".orb").getBoundingClientRect();
+    return o.top - p.top + o.height / 2;
+  },
+  mark(i, state) {
+    this.stations.forEach((s) => s.classList.remove("active", "busy", "done", "fail"));
+    if (i !== null) this.stations[i].classList.add(state);
+  },
+  // The logo, the headline and the sentence under it all change together.
+  state(mood, kicker, title, text) {
+    avatar.dataset.state = mood;
+    this.rail.dataset.state = mood;
+    for (const [node, value] of [[this.kicker, kicker], [this.title, title], [this.text, text]]) {
+      if (node.textContent === value) continue;
+      node.textContent = value;
+      node.classList.remove("swap");
+      void node.offsetWidth;   // restart the fade-in
+      node.classList.add("swap");
+    }
+  },
+  reset() {
+    this.queue = Promise.resolve();
+    this.at = 1;
+    this.packet.className = "packet on";
+    this.packet.style.top = `${this.y(1)}px`;
+    this.carry.textContent = "your question";
+    this.mark(1, "active");
+  },
+  // Queue a trip through a list of stations. Trips run one after another, so the
+  // panel always shows the order things really happened in.
+  travel(path, kind, carrying, after) {
+    this.queue = this.queue.then(() => new Promise((done) => {
+      this.packet.className = `packet on ${kind}`;
+      this.carry.textContent = carrying;
+      const frames = [this.at, ...path].map((i) => ({ top: `${this.y(i)}px` }));
+      const finish = () => {
+        this.at = path[path.length - 1];
+        this.packet.style.top = `${this.y(this.at)}px`;
+        if (after) after();
+        done();
+      };
+      // Browsers pause animations in background tabs; never let the panel fall
+      // behind the real run. Skip the trip, or cut it short if it stalls.
+      if (CALM || document.hidden) return finish();
+      const duration = 480 * path.length;
+      const trip = this.packet.animate(frames, { duration, easing: "cubic-bezier(.45,.05,.3,1)", fill: "forwards" });
+      let ended = false;
+      const end = () => { if (!ended) { ended = true; trip.cancel(); finish(); } };
+      trip.onfinish = end;
+      setTimeout(end, duration + 400);
+    }));
+  },
+  then(fn) { this.queue = this.queue.then(fn); },
+};
+
+// Move the logo from the hero into the panel, with a smooth glide (FLIP).
+function moveAvatarToPanel() {
+  const slot = $("#rail-slot");
+  if (slot.contains(avatar)) return;
+  const from = avatar.getBoundingClientRect();
+  slot.append(avatar);
+  if (CALM) return;
+  const to = avatar.getBoundingClientRect();
+  const dx = from.left - to.left;
+  const dy = from.top - to.top;
+  const s = from.width / to.width;
+  avatar.animate(
+    [{ transform: `translate(${dx}px, ${dy}px) scale(${s})`, transformOrigin: "top left" },
+     { transform: "none", transformOrigin: "top left" }],
+    { duration: 750, easing: "cubic-bezier(.2,.8,.2,1)" },
+  );
+}
+
+function startClock() {
+  clearInterval(ticker);
+  ticker = setInterval(() => {
+    $("#m-time").textContent = `${((performance.now() - started) / 1000).toFixed(1)}s`;
+  }, 100);
 }
 
 // ---------- tiny, safe markdown ----------
@@ -323,71 +354,73 @@ function handle(ev) {
       card("think", "✦", `Round ${ev.round} · Claude is thinking`,
         ev.round === 1 ? "Reading your question, its brief and the menu of tools" : "Reading what the tool brought back", true);
       if (ev.round === 1) {
-        flow.travel([0], "", "question + menu", () => {
-          flow.mark(0, "busy");
-          flow.say("<b>Claude</b> is reading your question, its brief and the menu of tools");
+        panel.travel([0], "", "question + menu of tools", () => {
+          panel.mark(0, "busy");
+          panel.state("thinking", "Round 1", "Claude is thinking", "Reading your question, its brief and the menu of tools.");
         });
       } else {
-        flow.travel([0], "data", "the alerts", () => {
-          flow.mark(0, "busy");
-          flow.say("<b>Claude</b> is reading what Wazuh returned. It never saw your lab, only this");
+        panel.travel([0], "data", "the alerts, nothing else", () => {
+          panel.mark(0, "busy");
+          panel.state("writing", `Round ${ev.round}`, "Claude is writing", "It sees only what the tool returned. Never the lab itself.");
         });
       }
       break;
     case "round":
       settle(pending, `Round ${ev.round} · ${MEANING[ev.stop_reason] || ev.stop_reason}`);
+      $("#m-rounds").textContent = ev.round;
       break;
     case "tool_call": {
       drawToolCall(ev);
       const blanks = Object.values(ev.input).join(", ");
-      flow.travel([1], "order", `order: ${blanks}`, () => {
-        flow.mark(1, "active");
-        flow.say("<b>agent.py</b> runs the search. Claude only filled in the blanks");
+      panel.travel([1], "order", `order: ${blanks}`, () => {
+        panel.mark(1, "active");
+        panel.state("searching", "Tool call", "Running the search", "agent.py fills the fixed query with Claude's two blanks.");
       });
-      flow.travel([2, 3], "", "as svc-ask-siem", () => {
-        flow.mark(3, "busy");
-        flow.say("<b>Wazuh</b> checks the certificate, the login and the role, then searches alerts");
+      panel.travel([2, 3], "", "search, as svc-ask-siem", () => {
+        panel.mark(3, "busy");
+        panel.state("searching", "Inside the lab", "Searching Wazuh", "Certificate checked, logged in as svc-ask-siem, alerts only.");
       });
       break;
     }
     case "tool_result":
       drawWazuh(ev);
       if (ev.is_error) {
-        flow.queue = flow.queue.then(() => {
-          flow.mark(2, "fail");
-          flow.packet.className = "packet on error";
-          flow.label.textContent = "no connection";
-          flow.say("The search <b>could not reach Wazuh</b>. The error goes back to Claude as it is");
+        panel.then(() => {
+          panel.mark(2, "fail");
+          panel.packet.className = "packet on error";
+          panel.carry.textContent = "an error";
+          panel.state("error", "Tool error", "Wazuh unreachable", "Is the SSH tunnel open? The error goes back to Claude as it is.");
         });
-        flow.travel([1], "error", "error");
       } else {
-        flow.travel([2, 1], "data", `${ev.result.total_matched.toLocaleString()} alerts`, () => {
-          flow.mark(1, "active");
-          flow.say("Only the chosen fields come back. <b>The raw logs stay in the lab</b>");
+        const n = ev.result.total_matched;
+        panel.travel([2, 1], "data", `${n.toLocaleString()} alerts, 12 fields each`, () => {
+          panel.mark(1, "active");
+          panel.state("searching", "Evidence in", `${n.toLocaleString()} alerts found`, "Only the chosen fields come back. The raw logs stay in the lab.");
+          countUp($("#m-alerts"), n);
         });
       }
       break;
     case "answer":
       drawAnswer(ev);
-      flow.travel([1], "answer", "the answer", () => {
-        flow.mark(1, "done");
-        flow.packet.classList.remove("on");
-        flow.say("Answer delivered. <b>Facts from Wazuh, words from Claude</b>");
+      panel.travel([1], "answer", "the answer", () => {
+        panel.mark(1, "done");
+        panel.packet.classList.remove("on");
+        panel.state("done", "Done", "Answer ready", "Facts from Wazuh, words from Claude. Read it like a junior analyst's report.");
+        countUp($("#m-tokens"), ev.tokens_in + ev.tokens_out);
       });
       break;
     case "refusal":
       card("error", "!", "Declined by a safety check", `Category: ${ev.category}`);
-      flow.mark(0, "fail");
+      panel.then(() => { panel.mark(0, "fail"); panel.state("error", "Stopped", "Declined", "A safety check declined this request."); });
       break;
     case "gave_up":
       card("error", "!", `Stopped after ${ev.max_rounds} rounds without a final answer`);
-      flow.mark(1, "fail");
+      panel.then(() => { panel.mark(1, "fail"); panel.state("error", "Stopped", "No final answer", `Gave up after ${ev.max_rounds} rounds.`); });
       break;
     case "error":
       settle(pending);
       card("error", "!", "Something failed", ev.message);
-      flow.mark(1, "fail");
-      flow.say("Something failed. The details are in the card below");
+      panel.then(() => { panel.mark(1, "fail"); panel.state("error", "Error", "Something failed", "The details are in the last card."); });
       break;
     case "done":
       finish();
@@ -399,6 +432,8 @@ function handle(ev) {
 function finish() {
   if (source) { source.close(); source = null; }   // stop the browser from auto-reconnecting
   settle(pending);
+  clearInterval(ticker);
+  $("#m-time").textContent = `${((performance.now() - started) / 1000).toFixed(1)}s`;
   go.disabled = false;
   go.textContent = "Ask";
 }
@@ -406,13 +441,22 @@ function finish() {
 function ask(question) {
   question = question.trim();
   if (question.length < 3 || source) return;
+  input.value = question;
+
+  document.body.classList.replace("idle", "running");
+  panel.rail.hidden = false;
+  moveAvatarToPanel();
   timeline.replaceChildren();
   timeline.hidden = false;
   go.disabled = true;
   go.textContent = "Working";
   started = performance.now();
-  flow.reset();
-  flow.say("You asked. <b>agent.py</b> is getting ready");
+  startClock();
+  for (const id of ["#m-rounds"]) $(id).textContent = "0";
+  for (const id of ["#m-alerts", "#m-tokens"]) $(id).textContent = "–";
+
+  panel.reset();
+  panel.state("thinking", "Starting", "Question received", "agent.py is packing your question with the brief and the menu.");
   card("you", "?", "You asked", question);
 
   const url = `/ask?q=${encodeURIComponent(question)}&token=${encodeURIComponent(TOKEN)}`;
@@ -421,14 +465,16 @@ function ask(question) {
   source.onerror = () => {
     if (!source) return;
     card("error", "!", "Lost the connection to web.py", "Is it still running in your terminal?");
+    panel.state("error", "Error", "Connection lost", "web.py stopped answering.");
     finish();
   };
 }
 
 $("#form").addEventListener("submit", (e) => { e.preventDefault(); ask(input.value || input.placeholder); });
 $("#chips").addEventListener("click", (e) => {
-  if (e.target.tagName === "BUTTON") { input.value = e.target.textContent; ask(input.value); }
+  if (e.target.tagName === "BUTTON") ask(e.target.textContent);
 });
+addEventListener("resize", () => { if (!panel.rail.hidden) panel.packet.style.top = `${panel.y(panel.at)}px`; });
 
 // ---------- tunnel status ----------
 async function checkTunnel() {
@@ -445,4 +491,4 @@ async function checkTunnel() {
   }
 }
 checkTunnel();
-clock = setInterval(checkTunnel, 8000);
+setInterval(checkTunnel, 8000);

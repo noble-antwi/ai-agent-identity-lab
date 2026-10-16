@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Ask my SIEM</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2 4 7v8c0 7.5 5.1 13.4 12 15 6.9-1.6 12-7.5 12-15V7z' fill='%2308152F' stroke='%232DD4E8' stroke-width='2'/%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2 4 7v8c0 7.5 5.1 13.4 12 15 6.9-1.6 12-7.5 12-15V7z' fill='%2308152F' stroke='%232DD4E8' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='3' fill='%232DD4E8'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/static/app.css">
 </head>
-<body>
+<body class="idle">
   <header class="top">
     <div class="brand">
-      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2 4 7v8c0 7.5 5.1 13.4 12 15 6.9-1.6 12-7.5 12-15V7z" fill="#0E1A33" stroke="#2DD4E8" stroke-width="2"/><path d="m11 16 3.5 3.5L21 13" fill="none" stroke="#2DD4E8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2 4 7v8c0 7.5 5.1 13.4 12 15 6.9-1.6 12-7.5 12-15V7z" fill="#0E1A33" stroke="#2DD4E8" stroke-width="2"/><circle cx="16" cy="16" r="3" fill="#2DD4E8"/></svg>
       <div>
         <strong>Ask my SIEM</strong>
         <span>Biira Bank lab · agent console</span>
@@ -24,35 +24,88 @@
     </div>
   </header>
 
-  <main>
-    <section class="ask">
-      <p class="eyebrow">Grounded answers from your own SIEM</p>
-      <h1>What do you want to know about <span class="grad">the lab</span>?</h1>
-      <form id="form" autocomplete="off">
-        <input id="q" maxlength="500" placeholder="Is anything unusual happening on WKS01 in the last 24 hours?">
-        <button id="go" type="submit">Ask</button>
-      </form>
-      <div class="chips" id="chips">
-        <button type="button">Is anything unusual happening on WKS01 in the last 24 hours?</button>
-        <button type="button">Were there any failed logons on WKS01 in the last 12 hours?</button>
-        <button type="button">What were the most serious alerts on DC01 in the last 24 hours?</button>
-      </div>
-    </section>
+  <div class="shell" id="shell">
+    <!-- The agent's live panel. Hidden until the first question. -->
+    <aside class="rail" id="rail" hidden>
+      <div class="avatar-slot" id="rail-slot"></div>
+      <p class="kicker" id="kicker">Ready</p>
+      <h2 class="state-title" id="state-title">Waiting for a question</h2>
+      <p class="state-text" id="state-text"></p>
 
-    <section class="flow" id="flow" hidden aria-label="Live view of where the request is">
-      <div class="zones"><span>Internet</span><span>Your laptop</span><span>Biira Bank lab</span></div>
-      <div class="flow-track" id="track">
-        <div class="node"><div class="orb">✦</div><b>Claude</b><span>Anthropic API</span></div>
-        <div class="node"><div class="orb">›_</div><b>agent.py</b><span>runs the tools</span></div>
-        <div class="node"><div class="orb">⇄</div><b>SSH tunnel</b><span>port 22</span></div>
-        <div class="node lab"><div class="orb">W</div><b>Wazuh</b><span>alerts only</span></div>
-        <div class="packet" id="packet"><span id="packet-label"></span></div>
+      <div class="pipe" id="pipe">
+        <div class="st"><div class="orb">✦</div><div class="st-text"><b>Claude</b><span>internet · Anthropic API</span></div></div>
+        <div class="st"><div class="orb">›_</div><div class="st-text"><b>agent.py</b><span>your laptop · runs the tools</span></div></div>
+        <div class="st"><div class="orb">⇄</div><div class="st-text"><b>SSH tunnel</b><span>port 22 · certificate checked</span></div></div>
+        <div class="st lab"><div class="orb">W</div><div class="st-text"><b>Wazuh</b><span>SIEM01 · alerts only</span></div></div>
+        <div class="packet" id="packet"></div>
       </div>
-      <p class="flow-caption" id="flow-caption">Waiting for a question</p>
-    </section>
+      <p class="carry">Carrying <b id="carry">nothing yet</b></p>
 
-    <section class="timeline" id="timeline" hidden></section>
-  </main>
+      <dl class="mini">
+        <div><dt>Elapsed</dt><dd id="m-time">0.0s</dd></div>
+        <div><dt>Rounds</dt><dd id="m-rounds">0</dd></div>
+        <div><dt>Alerts</dt><dd id="m-alerts">–</dd></div>
+        <div><dt>Tokens</dt><dd id="m-tokens">–</dd></div>
+      </dl>
+    </aside>
+
+    <main class="stage">
+      <section class="hero" id="hero">
+        <div class="avatar-slot big" id="hero-slot">
+          <!-- The agent's logo. It moves into the side panel when a question starts,
+               and its animation changes with what the agent is doing. -->
+          <svg id="avatar" class="avatar" viewBox="0 0 200 200" data-state="idle" aria-hidden="true">
+            <defs>
+              <radialGradient id="av-glow">
+                <stop class="g0" offset="0"/>
+                <stop class="g1" offset="1"/>
+              </radialGradient>
+              <linearGradient id="av-sweep" x1="0" y1="1" x2="1" y2="0">
+                <stop class="s0" offset="0"/>
+                <stop class="s1" offset="1"/>
+              </linearGradient>
+              <clipPath id="av-clip">
+                <path d="M100 38 L150 56 V96 C150 128 129 152 100 164 C71 152 50 128 50 96 V56 Z"/>
+              </clipPath>
+            </defs>
+            <circle class="halo" cx="100" cy="100" r="96"/>
+            <g class="ring r1"><circle cx="100" cy="100" r="88"/></g>
+            <g class="ring r2"><circle cx="100" cy="100" r="77"/></g>
+            <g class="orbit"><circle class="sat" cx="100" cy="12" r="4.5"/></g>
+            <g class="orbit o2"><circle class="sat" cx="100" cy="23" r="3"/></g>
+            <path class="shield" d="M100 38 L150 56 V96 C150 128 129 152 100 164 C71 152 50 128 50 96 V56 Z"/>
+            <g clip-path="url(#av-clip)">
+              <circle class="grid-c" cx="100" cy="104" r="20"/>
+              <circle class="grid-c" cx="100" cy="104" r="38"/>
+              <circle class="grid-c" cx="100" cy="104" r="56"/>
+              <path class="sweep" d="M100 104 L100 40 A64 64 0 0 1 155 72 Z"/>
+              <circle class="blip b1" cx="80" cy="90" r="3.4"/>
+              <circle class="blip b2" cx="124" cy="118" r="3.4"/>
+              <circle class="blip b3" cx="108" cy="68" r="2.8"/>
+              <circle class="blip b4" cx="76" cy="128" r="2.6"/>
+            </g>
+            <circle class="core" cx="100" cy="104" r="7"/>
+            <path class="check" d="M83 104 l12 12 l23 -25"/>
+            <path class="cross" d="M89 93 l22 22 M111 93 l-22 22"/>
+          </svg>
+        </div>
+        <p class="eyebrow">Grounded answers from your own SIEM</p>
+        <h1>Ask my <span class="grad">SIEM</span></h1>
+        <p class="lede">A read-only AI analyst for the Biira Bank lab. It searches Wazuh under its own identity and answers only from what it finds.</p>
+        <form id="form" autocomplete="off">
+          <input id="q" maxlength="500" placeholder="Is anything unusual happening on WKS01 in the last 24 hours?">
+          <button id="go" type="submit">Ask</button>
+        </form>
+        <div class="chips" id="chips">
+          <button type="button">Is anything unusual happening on WKS01 in the last 24 hours?</button>
+          <button type="button">Were there any failed logons on WKS01 in the last 12 hours?</button>
+          <button type="button">What were the most serious alerts on DC01 in the last 24 hours?</button>
+        </div>
+      </section>
+
+      <section class="timeline" id="timeline" hidden></section>
+    </main>
+  </div>
 
   <footer>
     <span><i class="dot green"></i>Facts come from Wazuh</span>
