@@ -27,7 +27,7 @@
   <main>
     <section class="ask">
       <p class="eyebrow">Grounded answers from your own SIEM</p>
-      <h1>What do you want to know about the lab?</h1>
+      <h1>What do you want to know about <span class="grad">the lab</span>?</h1>
       <form id="form" autocomplete="off">
         <input id="q" maxlength="500" placeholder="Is anything unusual happening on WKS01 in the last 24 hours?">
         <button id="go" type="submit">Ask</button>
@@ -37,6 +37,18 @@
         <button type="button">Were there any failed logons on WKS01 in the last 12 hours?</button>
         <button type="button">What were the most serious alerts on DC01 in the last 24 hours?</button>
       </div>
+    </section>
+
+    <section class="flow" id="flow" hidden aria-label="Live view of where the request is">
+      <div class="zones"><span>Internet</span><span>Your laptop</span><span>Biira Bank lab</span></div>
+      <div class="flow-track" id="track">
+        <div class="node"><div class="orb">✦</div><b>Claude</b><span>Anthropic API</span></div>
+        <div class="node"><div class="orb">›_</div><b>agent.py</b><span>runs the tools</span></div>
+        <div class="node"><div class="orb">⇄</div><b>SSH tunnel</b><span>port 22</span></div>
+        <div class="node lab"><div class="orb">W</div><b>Wazuh</b><span>alerts only</span></div>
+        <div class="packet" id="packet"><span id="packet-label"></span></div>
+      </div>
+      <p class="flow-caption" id="flow-caption">Waiting for a question</p>
     </section>
 
     <section class="timeline" id="timeline" hidden></section>

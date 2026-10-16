@@ -98,6 +98,13 @@ Then open the link it prints. It shows each step live as it happens: Claude
 thinking, the order it places from the menu, what Wazuh returned (per-rule bar
 chart, the 50 alerts Claude received), and the answer.
 
+A live flow strip across the top tells the same story as the animated diagram,
+driven by the real run: a packet travels Claude, agent.py, the SSH tunnel and
+Wazuh as each event arrives, labelled with what it carries ("question + menu",
+"order: WKS01, 24", "as svc-ask-siem", "709 alerts", "the answer"). Motion is
+switched off for anyone whose system asks for reduced motion, and the strip
+skips ahead rather than lag when the tab is in the background.
+
 **One agent, two faces.** The loop lives once, in `agent.run_agent()`, and reports
 each step as an event. `agent.py`'s terminal face and `web.py` both consume the
 same events, so the agent cannot behave differently depending on how it is shown.

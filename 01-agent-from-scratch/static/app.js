@@ -17,6 +17,82 @@ let pending = null;   // the card currently showing a spinner
 let started = 0;
 let clock = 0;
 
+const CALM = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// ---------- the live flow strip: a packet that travels as the run happens ----------
+// Nodes, left to right: 0 Claude · 1 agent.py · 2 SSH tunnel · 3 Wazuh
+const flow = {
+  box: $("#flow"),
+  track: $("#track"),
+  nodes: [...document.querySelectorAll("#track .node")],
+  packet: $("#packet"),
+  label: $("#packet-label"),
+  caption: $("#flow-caption"),
+  at: 1,
+  queue: Promise.resolve(),
+
+  x(i) {
+    const t = this.track.getBoundingClientRect();
+    const o = this.nodes[i].querySelector(".orb").getBoundingClientRect();
+    return o.left - t.left + o.width / 2;
+  },
+  mark(i, state) {
+    this.nodes.forEach((n) => n.classList.remove("active", "busy", "done", "fail"));
+    if (i !== null) this.nodes[i].classList.add(state);
+  },
+  say(html) { this.caption.innerHTML = html; },   // only ever fixed strings from this file
+
+  reset() {
+    this.box.hidden = false;
+    this.queue = Promise.resolve();
+    this.at = 1;
+    this.packet.className = "packet";
+    this.packet.style.left = `${this.x(1)}px`;
+    this.mark(1, "active");
+  },
+
+  // Queue a trip through a list of nodes. Trips run one after another.
+  travel(path, kind, text, after) {
+    this.queue = this.queue.then(() => new Promise((done) => {
+      this.packet.className = `packet on ${kind}`;
+      this.label.textContent = text;
+      const frames = [this.at, ...path].map((i) => ({ left: `${this.x(i)}px` }));
+      const finish = () => {
+        this.at = path[path.length - 1];
+        this.packet.style.left = `${this.x(this.at)}px`;
+        if (after) after();
+        done();
+      };
+      // Browsers pause animations in background tabs; never let the strip fall
+      // behind the real run. Skip the trip, or cut it short if it stalls.
+      if (CALM || document.hidden) return finish();
+      const duration = 520 * path.length;
+      const trip = this.packet.animate(frames, {
+        duration,
+        easing: "cubic-bezier(.45,.05,.3,1)",
+        fill: "forwards",
+      });
+      let ended = false;
+      const end = () => { if (!ended) { ended = true; trip.cancel(); finish(); } };
+      trip.onfinish = end;
+      setTimeout(end, duration + 400);
+    }));
+  },
+};
+addEventListener("resize", () => { if (!flow.box.hidden) flow.packet.style.left = `${flow.x(flow.at)}px`; });
+
+// ---------- numbers that count up ----------
+function countUp(node, to) {
+  if (CALM) { node.textContent = to.toLocaleString(); return; }
+  const t0 = performance.now();
+  const step = (now) => {
+    const p = Math.min(1, (now - t0) / 900);
+    node.textContent = Math.round(to * (1 - Math.pow(1 - p, 3))).toLocaleString();
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
 // ---------- small DOM helpers ----------
 function el(tag, cls, text) {
   const node = document.createElement(tag);
@@ -34,6 +110,11 @@ function card(kind, icon, title, sub, live) {
   head.append(t, el("span", "time", ""));
   c.append(head);
   if (sub) c.append(el("div", "sub", sub));
+  if (live) {   // shimmering placeholder lines while we wait
+    const skel = el("div", "skel");
+    skel.append(el("i"), el("i"), el("i"));
+    c.append(skel);
+  }
   timeline.append(c);
   c.scrollIntoView({ behavior: "smooth", block: "end" });
   if (live) {
@@ -46,6 +127,7 @@ function card(kind, icon, title, sub, live) {
 function settle(c, title) {
   if (!c) return;
   c.classList.remove("live");
+  c.querySelector(".skel")?.remove();
   const t = c.querySelector(".title");
   t.classList.remove("dots");
   if (title) t.textContent = title;
@@ -157,14 +239,16 @@ function drawWazuh(ev) {
 
   const stats = el("div", "stats");
   for (const [value, label, hl] of [
-    [r.total_matched.toLocaleString(), `alerts in ${r.hours}h`, true],
+    [r.total_matched, `alerts in ${r.hours}h`, true],
     [r.summary_by_rule.length, "rules", false],
     [r.alerts_shown, "examples sent", false],
-    [ev.characters.toLocaleString(), "characters to Claude", false],
+    [ev.characters, "characters to Claude", false],
   ]) {
     const s = el("div", `stat${hl ? " hl" : ""}`);
-    s.append(el("b", "", String(value)), el("span", "", label));
+    const num = el("b", "", "0");
+    s.append(num, el("span", "", label));
     stats.append(s);
+    countUp(num, value);
   }
   c.append(stats);
 
@@ -172,8 +256,9 @@ function drawWazuh(ev) {
   const max = Math.max(1, ...rows.map((x) => x.count));
   const rules = el("div", "rules");
   const bars = [];
-  for (const row of rows) {
+  for (const [n, row] of rows.entries()) {
     const line = el("div", "rule");
+    line.style.animationDelay = `${n * 45}ms`;
     const cls = levelClass(row.level);
     line.append(el("span", `lvl ${cls}`, String(row.level)));
     line.append(el("span", "rid", row.rule_id));
@@ -182,6 +267,7 @@ function drawWazuh(ev) {
     line.append(d);
     const bar = el("span", "bar");
     const fill = el("i", cls);
+    fill.style.transitionDelay = `${150 + n * 45}ms`;
     bar.append(fill);
     bars.push([fill, Math.max(2, (row.count / max) * 100)]);
     line.append(bar);
@@ -193,7 +279,8 @@ function drawWazuh(ev) {
 
   if (r.alerts.length) {
     const det = el("details", "examples");
-    det.append(el("summary", "", `Show the ${r.alerts.length} alerts Claude received`));
+    const n = r.alerts.length;
+    det.append(el("summary", "", `Show the ${n} alert${n === 1 ? "" : "s"} Claude received`));
     const wrap = el("div", "wrap");
     const table = el("table");
     const cols = [["timestamp", "Time"], ["rule.level", "Lvl"], ["rule.id", "Rule"], ["rule.description", "Description"],
@@ -216,6 +303,10 @@ function drawAnswer(ev) {
   const c = card("answer", "✓", "The answer", "Every claim should cite a rule id and a time. Check it like you would a junior analyst's report.");
   const body = el("div", "md");
   body.innerHTML = md(ev.text);   // safe: md() escapes before formatting
+  [...body.children].forEach((part, n) => {   // reveal it block by block
+    part.classList.add("reveal");
+    part.style.animationDelay = `${n * 90}ms`;
+  });
   c.append(body);
   const meta = el("div", "meta");
   const secs = ((performance.now() - started) / 1000).toFixed(1);
@@ -231,28 +322,72 @@ function handle(ev) {
     case "thinking":
       card("think", "✦", `Round ${ev.round} · Claude is thinking`,
         ev.round === 1 ? "Reading your question, its brief and the menu of tools" : "Reading what the tool brought back", true);
+      if (ev.round === 1) {
+        flow.travel([0], "", "question + menu", () => {
+          flow.mark(0, "busy");
+          flow.say("<b>Claude</b> is reading your question, its brief and the menu of tools");
+        });
+      } else {
+        flow.travel([0], "data", "the alerts", () => {
+          flow.mark(0, "busy");
+          flow.say("<b>Claude</b> is reading what Wazuh returned. It never saw your lab, only this");
+        });
+      }
       break;
     case "round":
       settle(pending, `Round ${ev.round} · ${MEANING[ev.stop_reason] || ev.stop_reason}`);
       break;
-    case "tool_call":
+    case "tool_call": {
       drawToolCall(ev);
+      const blanks = Object.values(ev.input).join(", ");
+      flow.travel([1], "order", `order: ${blanks}`, () => {
+        flow.mark(1, "active");
+        flow.say("<b>agent.py</b> runs the search. Claude only filled in the blanks");
+      });
+      flow.travel([2, 3], "", "as svc-ask-siem", () => {
+        flow.mark(3, "busy");
+        flow.say("<b>Wazuh</b> checks the certificate, the login and the role, then searches alerts");
+      });
       break;
+    }
     case "tool_result":
       drawWazuh(ev);
+      if (ev.is_error) {
+        flow.queue = flow.queue.then(() => {
+          flow.mark(2, "fail");
+          flow.packet.className = "packet on error";
+          flow.label.textContent = "no connection";
+          flow.say("The search <b>could not reach Wazuh</b>. The error goes back to Claude as it is");
+        });
+        flow.travel([1], "error", "error");
+      } else {
+        flow.travel([2, 1], "data", `${ev.result.total_matched.toLocaleString()} alerts`, () => {
+          flow.mark(1, "active");
+          flow.say("Only the chosen fields come back. <b>The raw logs stay in the lab</b>");
+        });
+      }
       break;
     case "answer":
       drawAnswer(ev);
+      flow.travel([1], "answer", "the answer", () => {
+        flow.mark(1, "done");
+        flow.packet.classList.remove("on");
+        flow.say("Answer delivered. <b>Facts from Wazuh, words from Claude</b>");
+      });
       break;
     case "refusal":
       card("error", "!", "Declined by a safety check", `Category: ${ev.category}`);
+      flow.mark(0, "fail");
       break;
     case "gave_up":
       card("error", "!", `Stopped after ${ev.max_rounds} rounds without a final answer`);
+      flow.mark(1, "fail");
       break;
     case "error":
       settle(pending);
       card("error", "!", "Something failed", ev.message);
+      flow.mark(1, "fail");
+      flow.say("Something failed. The details are in the card below");
       break;
     case "done":
       finish();
@@ -276,6 +411,8 @@ function ask(question) {
   go.disabled = true;
   go.textContent = "Working";
   started = performance.now();
+  flow.reset();
+  flow.say("You asked. <b>agent.py</b> is getting ready");
   card("you", "?", "You asked", question);
 
   const url = `/ask?q=${encodeURIComponent(question)}&token=${encodeURIComponent(TOKEN)}`;
