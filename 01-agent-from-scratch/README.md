@@ -55,6 +55,7 @@ Three parts:
 | 0 | Virtual environment, `anthropic` and `python-dotenv`, key in `.env` | Done 2026-10-13 |
 | 1a | The loop by hand, with a fake Wazuh tool returning three made-up alerts | Done 2026-10-13 |
 | 1b | Swap the fake tool for a real, read-only Wazuh query | Done 2026-10-15: first real run against SIEM01 |
+| 1c | A web face on the same loop (`web.py`), local only, token-gated | Done 2026-10-16 |
 | 2 | Add a read-only AD lookup tool | Not started |
 | 3 | Move the loop to the Anthropic SDK's Tool Runner | Not started |
 
@@ -86,6 +87,31 @@ Files this needs that are never committed:
 
 `agent.py` is the agent: the brief, the tool, the loop. `display.py` only draws it
 in the terminal with the `rich` library and changes nothing about how it thinks.
+
+### The web face
+
+```bash
+python web.py
+```
+
+Then open the link it prints. It shows each step live as it happens: Claude
+thinking, the order it places from the menu, what Wazuh returned (per-rule bar
+chart, the 50 alerts Claude received), and the answer.
+
+**One agent, two faces.** The loop lives once, in `agent.run_agent()`, and reports
+each step as an event. `agent.py`'s terminal face and `web.py` both consume the
+same events, so the agent cannot behave differently depending on how it is shown.
+
+A web page in front of an agent is a new door, so it is built like one:
+
+| Control | Why |
+|---|---|
+| Listens on `127.0.0.1` only | Nothing else on the network can reach it |
+| A random token, new at every start, is required on every request | Another web page open in the same browser cannot quietly make the agent run, and spend |
+| Host header pinned to `127.0.0.1` / `localhost` | Blocks DNS-rebinding, where a hostile site points its own name at your laptop |
+| Strict Content-Security-Policy, no third-party script at all | The page can run only its own code |
+| Data from Wazuh and Claude is inserted as text, never as HTML. The answer's Markdown is rendered by a small renderer that escapes everything first | Alert fields can hold attacker-chosen text; it must never become live markup (stored XSS through the SIEM) |
+| `Referrer-Policy: no-referrer` | The token never leaks to another site |
 
 ## Evidence
 

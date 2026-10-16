@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ask my SIEM</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2 4 7v8c0 7.5 5.1 13.4 12 15 6.9-1.6 12-7.5 12-15V7z' fill='%2308152F' stroke='%232DD4E8' stroke-width='2'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2 4 7v8c0 7.5 5.1 13.4 12 15 6.9-1.6 12-7.5 12-15V7z" fill="#0E1A33" stroke="#2DD4E8" stroke-width="2"/><path d="m11 16 3.5 3.5L21 13" fill="none" stroke="#2DD4E8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div>
+        <strong>Ask my SIEM</strong>
+        <span>Biira Bank lab · agent console</span>
+      </div>
+    </div>
+    <div class="pills">
+      <span class="pill identity" title="The identity every search runs as"><b>svc-ask-siem</b></span>
+      <span class="pill">read-only</span>
+      <span class="pill mono">wazuh-alerts-*</span>
+      <span class="pill status" id="tunnel"><i></i><span>checking tunnel</span></span>
+    </div>
+  </header>
+
+  <main>
+    <section class="ask">
+      <p class="eyebrow">Grounded answers from your own SIEM</p>
+      <h1>What do you want to know about the lab?</h1>
+      <form id="form" autocomplete="off">
+        <input id="q" maxlength="500" placeholder="Is anything unusual happening on WKS01 in the last 24 hours?">
+        <button id="go" type="submit">Ask</button>
+      </form>
+      <div class="chips" id="chips">
+        <button type="button">Is anything unusual happening on WKS01 in the last 24 hours?</button>
+        <button type="button">Were there any failed logons on WKS01 in the last 12 hours?</button>
+        <button type="button">What were the most serious alerts on DC01 in the last 24 hours?</button>
+      </div>
+    </section>
+
+    <section class="timeline" id="timeline" hidden></section>
+  </main>
+
+  <footer>
+    <span><i class="dot green"></i>Facts come from Wazuh</span>
+    <span><i class="dot cyan"></i>Words come from Claude</span>
+    <span><i class="dot red"></i>Claude never touches the lab</span>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -194,31 +194,34 @@ def run_tool(name: str, tool_input: dict) -> tuple[str, bool]:
 
 # 5. THE LOOP. Ask Claude; if it wants a tool, run it and hand back the result;
 #    repeat until Claude gives a final answer.
-def ask(question: str) -> None:
+#    It does not print anything. It reports each step as an "event" (a small
+#    dict) and lets whoever called it decide how to show it: the terminal below,
+#    or the web page in web.py. One agent, two faces.
+def run_agent(question: str):
     messages = [{"role": "user", "content": question}]
     tokens_in = tokens_out = 0
-    display.header(question, MODEL)
 
     for round_no in range(1, MAX_ROUNDS + 1):
-        with display.thinking(round_no):
-            response = client.beta.messages.create(
-                model=MODEL,
-                max_tokens=16000,
-                system=SYSTEM,
-                tools=TOOLS,
-                messages=messages,
-                output_config={"effort": "medium"},
-                # If a safety check declines the request, retry it on another model
-                # instead of just stopping. Security topics can trip those checks.
-                betas=["server-side-fallback-2026-07-01"],
-                fallbacks="default",
-            )
+        yield {"type": "thinking", "round": round_no}
+        response = client.beta.messages.create(
+            model=MODEL,
+            max_tokens=16000,
+            system=SYSTEM,
+            tools=TOOLS,
+            messages=messages,
+            output_config={"effort": "medium"},
+            # If a safety check declines the request, retry it on another model
+            # instead of just stopping. Security topics can trip those checks.
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+        )
         tokens_in += response.usage.input_tokens
         tokens_out += response.usage.output_tokens
-        display.round_line(round_no, response.stop_reason)
+        yield {"type": "round", "round": round_no, "stop_reason": response.stop_reason}
 
         if response.stop_reason == "refusal":
-            display.refusal(response.stop_details.category if response.stop_details else None)
+            category = response.stop_details.category if response.stop_details else None
+            yield {"type": "refusal", "category": category}
             return
 
         # Keep Claude's whole reply in the conversation, exactly as it came back.
@@ -226,7 +229,8 @@ def ask(question: str) -> None:
 
         if response.stop_reason != "tool_use":
             answer = "".join(b.text for b in response.content if b.type == "text")
-            display.answer(answer, round_no, tokens_in, tokens_out)
+            yield {"type": "answer", "text": answer, "rounds": round_no,
+                   "tokens_in": tokens_in, "tokens_out": tokens_out}
             return
 
         # Claude asked for one or more tools. Run each, collect every result,
@@ -234,10 +238,9 @@ def ask(question: str) -> None:
         results = []
         for block in response.content:
             if block.type == "tool_use":
-                display.tool_call(block.name, block.input)
-                with display.searching():
-                    output, is_error = run_tool(block.name, block.input)
-                display.tool_result(output, is_error)
+                yield {"type": "tool_call", "name": block.name, "input": block.input}
+                output, is_error = run_tool(block.name, block.input)
+                yield {"type": "tool_result", "output": output, "is_error": is_error}
                 results.append({
                     "type": "tool_result",
                     "tool_use_id": block.id,  # Must match the request it answers.
@@ -246,7 +249,35 @@ def ask(question: str) -> None:
                 })
         messages.append({"role": "user", "content": results})
 
-    display.gave_up(MAX_ROUNDS)
+    yield {"type": "gave_up", "max_rounds": MAX_ROUNDS}
+
+
+# 6. The terminal face: turn each event into something drawn by display.py.
+def ask(question: str) -> None:
+    display.header(question, MODEL)
+    spinner = None
+    for event in run_agent(question):
+        if spinner:  # Whatever we were waiting for has arrived.
+            spinner.stop()
+            spinner = None
+        kind = event["type"]
+        if kind == "thinking":
+            spinner = display.thinking(event["round"])
+            spinner.start()
+        elif kind == "round":
+            display.round_line(event["round"], event["stop_reason"])
+        elif kind == "tool_call":
+            display.tool_call(event["name"], event["input"])
+            spinner = display.searching()
+            spinner.start()
+        elif kind == "tool_result":
+            display.tool_result(event["output"], event["is_error"])
+        elif kind == "answer":
+            display.answer(event["text"], event["rounds"], event["tokens_in"], event["tokens_out"])
+        elif kind == "refusal":
+            display.refusal(event["category"])
+        elif kind == "gave_up":
+            display.gave_up(event["max_rounds"])
 
 
 if __name__ == "__main__":
