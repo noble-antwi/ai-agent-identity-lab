@@ -109,6 +109,13 @@ arrives), what the packet is carrying, and a running clock, rounds, alerts and
 tokens. Motion is switched off for anyone whose system asks for reduced motion,
 and the panel skips ahead rather than lag when the tab is in the background.
 
+![A real question, start to finish, at twice the speed](images/agent-15-web-run.gif)
+
+*A real run against SIEM01, at twice the speed: the logo moves into the side
+panel, turns green while Wazuh is searched (719 alerts, 20 rules), gold while
+Claude writes, and draws a check when the answer is ready. The full recording,
+muted, is [`images/agent-15-web-run.mp4`](images/agent-15-web-run.mp4).*
+
 **One agent, two faces.** The loop lives once, in `agent.run_agent()`, and reports
 each step as an event. `agent.py`'s terminal face and `web.py` both consume the
 same events, so the agent cannot behave differently depending on how it is shown.
