@@ -243,6 +243,24 @@ decisions), and this is the cost of that choice made visible.*
 *It ends with what a human should check, and changes nothing. Two rounds,
 8,064 tokens in, 2,078 out.*
 
+### Checking the agent's work
+
+An agent's answer is a junior analyst's report: every claim gets checked before
+anyone acts on it. First claim checked, 2026-10-17: "rule 92058 fired every hour
+at about :40".
+
+![Rule 92058 in Discover: 24 hits, one per hour](images/agent-16-human-check-92058.png)
+
+*Discover, `agent.name:WKS01 and rule.id:92058`, last 24 hours: 24 hits, one per
+hour at about :40. The claim holds. The full event also shows what the agent
+could not see, because those fields are deliberately not sent to it: the
+program is `C:\Windows\System32\sdbinst.exe` (Microsoft's Application
+Compatibility Database Installer), started by `svchost.exe -k
+LocalSystemNetworkRestricted -p -s PcaSvc`, the built-in Program Compatibility
+Assistant service. That points to Windows' own scheduled behaviour rather than an
+attacker installing a shim, so the level 12 rating is very likely a false
+positive. The agent was right to flag it and right not to call it either way.*
+
 ## What I learned
 
 - **An agent is three parts: a model, a loop, and tools.** The model never runs
