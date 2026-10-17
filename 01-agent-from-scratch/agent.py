@@ -45,6 +45,8 @@ MAX_ROUNDS = 5  # A safety stop: the loop can never run forever (or cost forever
 WAZUH_URL = "https://127.0.0.1:9200"
 WAZUH_CA = HERE / "certs" / "wazuh-root-ca.pem"  # Wazuh's public CA certificate
 MAX_ALERTS = 50  # Never hand the model everything: SIEM01 holds hundreds of thousands.
+MAX_HOURS = 168  # One week. Safe because results are capped however wide the window is.
+MAX_RULES = 100  # Per-rule summary rows. Anything beyond is still counted, as "other".
 
 # The only fields that leave the lab. Everything else in an alert, including the
 # raw log line (full_log), stays behind: whatever the tool returns goes to Claude.
@@ -74,7 +76,7 @@ TOOLS = [
         "name": "search_wazuh_alerts",
         "description": (
             "Search Wazuh SIEM alerts for one lab machine over the last N hours "
-            "(1 to 24). Read-only. Returns the total number of matching alerts, a "
+            "(1 to 168, one week). Read-only. Returns the total number of matching alerts, a "
             "count per rule covering every match, and up to 50 individual alerts, "
             "highest level first, then newest."
         ),
@@ -87,7 +89,7 @@ TOOLS = [
                 },
                 "hours": {
                     "type": "integer",
-                    "description": "How many hours back to search, from 1 to 24",
+                    "description": "How many hours back to search, from 1 to 168 (one week)",
                 },
             },
             "required": ["agent_name", "hours"],
@@ -101,7 +103,7 @@ TOOLS = [
 # 4. The kitchen: the real search. A fixed query with two blanks. Claude fills in
 #    the blanks (agent name, hours); it never writes the query itself.
 def search_wazuh_alerts(agent_name: str, hours: int) -> dict:
-    hours = max(1, min(int(hours), 24))  # Never trust tool input blindly: clamp it.
+    hours = max(1, min(int(hours), MAX_HOURS))  # Never trust tool input blindly: clamp it.
     query = {
         "size": MAX_ALERTS,
         "track_total_hits": True,  # Count every match, not just the first 10,000.
@@ -113,7 +115,7 @@ def search_wazuh_alerts(agent_name: str, hours: int) -> dict:
         ]}},
         # A count per rule across ALL matches, so 50 examples never hide the rest.
         "aggs": {"by_rule": {
-            "terms": {"field": "rule.id", "size": 20},
+            "terms": {"field": "rule.id", "size": MAX_RULES},
             "aggs": {
                 "description": {"terms": {"field": "rule.description", "size": 1}},
                 "level": {"max": {"field": "rule.level"}},
@@ -138,6 +140,9 @@ def search_wazuh_alerts(agent_name: str, hours: int) -> dict:
         "hours": hours,
         "total_matched": body["hits"]["total"]["value"],
         "summary_by_rule": summary,
+        # Alerts from rules beyond the summary rows. If this is ever above zero, the
+        # summary is incomplete, and the model is told so rather than left to guess.
+        "alerts_in_rules_not_listed": body["aggregations"]["by_rule"]["sum_other_doc_count"],
         "alerts_shown": len(alerts),
         "alerts": alerts,
     }

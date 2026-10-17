@@ -287,3 +287,13 @@ Python could not find it.*
   checked, and a deliberate test against `localhost` still fails as it should.
 - The first display test crashed on Windows' old default text encoding, which
   cannot print `✓`. `display.py` switches its output to UTF-8.
+- **The agent found a bug in its own tool.** Asked about the last 30 hours, it
+  noted that the window was capped at 24 (correct, by design at the time), and
+  then that the per-rule counts added up to 724 while the total was 725, so a
+  rule was missing from the summary. It was right: the summary listed only the
+  top 20 rules by count, and the 21st, a single level 14 alert, fell off. Fixed:
+  up to 100 rules are listed, and the result now carries
+  `alerts_in_rules_not_listed` so a truncated summary can never pass silently.
+  The window was raised to one week at the same time, which is safe because the
+  result is capped however wide the window is. Checked against SIEM01: 30 hours,
+  1,086 alerts, 21 rules, counts sum exactly.
