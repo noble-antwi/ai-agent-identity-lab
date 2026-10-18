@@ -208,6 +208,25 @@ changed:
 | Rule 92217, executables in the Windows folder | No explanation possible | `AM_Delta_Patch_...exe` written by `svchost.exe` to `SoftwareDistribution\Download\Install`: Defender definition updates |
 | Rule 92212, level 14 | Likely false alarm, from the filename alone | Same verdict, now naming the writing process, 32-bit PowerShell |
 
+Second claim checked: "the local Administrators group changed 14 times, about
+1 hour 41 minutes apart; the alerts don't say who made the change". The agent
+was right that it could not tell, and right to send it to a human.
+
+![Rule 60147 in Discover: the machine changed its own group](images/agent-17-human-check-60147.png)
+
+*Every change was made by `WKS01$` (`S-1-5-18`, Local System, logon session
+`0x3e7`): the computer itself, not a person. The group is the built-in
+Administrators (`S-1-5-32-544`). Group Policy refreshes every 90 minutes plus a
+random 0 to 30, and the lab's own Group Policy Preference adds the scanner's
+group to local Administrators on every refresh, which Windows records as a group
+change each time. Explained: expected behaviour from the lab's own policy.*
+
+Third pattern, the bursts at 00:39 and 12:39 (PowerShell writing files and
+running `SecEdit.exe`): traced up the process tree to
+`C:\Program Files (x86)\ossec-agent\wazuh-agent.exe`. The SIEM's own agent,
+running its twice-daily security configuration check, was setting off the SIEM's
+own alerts.
+
 ## What I learned
 
 - **An agent is three parts: a model, a loop, and tools.** The model never runs
