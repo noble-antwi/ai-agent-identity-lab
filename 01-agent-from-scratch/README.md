@@ -1,52 +1,250 @@
-# 01. Agent from scratch: "Ask my SIEM"
+# 01. Ask my SIEM: an AI agent with its own identity
 
-**Status:** In progress. Stages 1a and 1b done: the agent answers from real Wazuh data. Stage 2 (AD lookup) next.
+**Status:** working end to end against a real SIEM. Next: an Active Directory lookup tool (stage 2).
 
-## Goal
+![A real question, start to finish, at twice the speed](images/agent-15-web-run.gif)
 
-A Python agent I can ask plain questions about my lab, such as *"Is anything
-unusual happening on WKS01 in the last 24 hours?"*, that answers only from what
-its tools return. Two read-only tools: a search of Wazuh alerts on SIEM01, and a
-lookup in the lab's Active Directory (`corp.biirabank.com`).
+*A real run against the lab's Wazuh SIEM, at twice the speed. The shield turns
+green while Wazuh is searched, gold while Claude writes, and draws a check when
+the answer is ready.*
 
-The project started as an AD + Okta lookup. It was re-scoped on 2026-10-13 to
-Wazuh + AD because the Okta org has to be rebuilt first, and Wazuh already holds
-real lab data worth asking about.
+## In 30 seconds
 
-I am writing the agent loop by hand before using any framework. The point of
-this lab is securing agents, and that needs a clear view of what an agent
-actually is: a loop, a model, and a set of tools whose permissions are mine to
-decide.
+I can ask my security lab a plain question, such as *"Is anything unusual
+happening on WKS01 in the last 24 hours?"*, and an AI agent answers it from my
+SIEM's real alerts, citing the rule and time behind every claim.
 
-## Architecture
+The interesting part is not that it answers. It is **how little the AI is
+trusted while it does**:
 
-![Ask my SIEM data flow](images/agent-flow-animated.svg)
+- **The AI never touches the lab.** Claude only asks for a search. My code runs
+  it, under a separate account, and decides what Claude gets to see.
+- **The agent has its own identity.** It searches as `svc-ask-siem`, an account
+  with one read-only role on alerts and nothing else. Proven: before the role was
+  granted the account got `403`, after it got data, and the archive of every raw
+  event still returns `403`.
+- **It cannot write its own queries.** The search is a fixed template; Claude
+  only fills in two blanks, the machine and the time window.
+- **Secrets are stripped before anything leaves.** Command lines pass through a
+  filter that removes passwords, keys and tokens, proven on 14 test cases.
+- **It checks who it is talking to.** The connection to the SIEM verifies the
+  server's certificate, so nothing can impersonate the SIEM and feed it fake
+  alerts.
+- **It says what it does not know.** With the SIEM unreachable, it refused to
+  guess. On another run it spotted that its own tool's numbers did not add up,
+  which exposed a real bug.
+
+## How it works
+
+![How one question becomes an answer](images/agent-flow-animated.svg)
 
 *One question in eight steps. Claude never connects to the lab: my code runs
 every tool, under the agent's own read-only identity, and decides what Claude
-gets to see. Static versions of both diagrams sit beside the animated ones in `images/`, and `images/build_animations.py` regenerates the motion from them.*
+gets to see.*
 
-Three parts:
+An agent is three parts, and I wrote the loop by hand before using any framework
+so that none of it is magic:
 
 | Part | What it is | Here |
 |---|---|---|
 | The brain | Reads, reasons, decides which tool to ask for | Claude, through the Anthropic API |
-| The loop | Ask the model; if it wants a tool, run it and hand back the result; repeat | `ask()` in `agent.py`, capped at 5 rounds |
-| The tools | The only things the agent can touch | `search_wazuh_alerts` (stage 1), AD lookup (stage 2) |
+| The loop | Ask the model; if it wants a tool, run it and hand back the result; repeat | `run_agent()` in `agent.py`, capped at 5 rounds |
+| The tools | The only things the agent can touch | `search_wazuh_alerts` today; an AD lookup next |
+
+**One agent, two faces.** The loop lives once, in `agent.run_agent()`, and
+reports each step as an event. The terminal version and the web page both draw
+the same events, so the agent cannot behave differently depending on how it is
+shown.
+
+### Reaching the SIEM without exposing it
+
+![How the laptop reaches a database that only answers from inside](images/agent-doors-animated.svg)
+
+*The Wazuh database has no door on the network side, and it stays that way. The
+laptop comes in through the SSH door it already holds a key for, and the call is
+made from inside SIEM01, where the database does answer.*
 
 ## Design decisions
 
 | Decision | Why | Control |
 |---|---|---|
-| The query is a fixed template in my code. Claude only fills the blanks (agent name, hours). | A model that writes its own queries can read anything the account can read. Filling blanks is the smallest useful power. | NIST 800-53 AC-6 least privilege |
-| Tool inputs are checked by a strict schema and clamped in code (hours 1 to 24). | Never trust tool input, even from my own agent. | SI-10 input validation |
-| The agent gets its own indexer account with a read-only role on `wazuh-alerts-*`, never `admin`. | Same pattern as the scanner's `svc-greenbone`: one identity per job, so every query is attributable and scoped. | AC-2, AC-6, IA-2 |
-| The Wazuh indexer stays bound to `127.0.0.1`. The agent reaches it through an SSH tunnel. | Opening port 9200 to the network would let any lab host try credentials against the store of every log I collect. | SC-7 boundary protection, AC-17 remote access |
-| The API key lives in a git-ignored `.env`, with a gitleaks pre-commit hook as backstop. | Moves to Vault in project 3. | IA-5 authenticator management |
-| No tool can change anything. The answer ends with what a human should check. | Project 1 is read-only by rule. Write actions need an approval step, which comes later. | AC-6, AU-6 review by a human |
-| The agent checks the indexer's certificate against Wazuh's own CA and calls it at `127.0.0.1`, the only address on the certificate. No `-k`, no verification turned off. | An agent that skips the check can be fed fake alerts by anything that answers on that port, and it would report them as fact. Proven both ways: the real certificate passes, and calling it as `localhost` is rejected with a hostname mismatch. | SC-8, SC-23 session authenticity |
-| Only named fields leave the lab: who, where, which rule, plus which program ran (`image`), what started it (`parentImage`) and which file was written (`targetFilename`). Command lines are sent only after `redact.py` strips passwords, keys, tokens and encoded payloads and cuts them to 300 characters; `test_redact.py` proves it on 14 cases. The raw log line (`full_log`) never leaves. Results are capped at 50 alerts plus a per-rule count of every match. | Whatever a tool returns is sent to the model provider. Paths name things; command lines are free text and can hold secrets or attacker-chosen instructions. Send the least that answers the question, and clean what must be sent. | AC-4 information flow, SC-28, SI-10, SA-8 |
-| The system prompt tells the model that text inside alerts is data, never instructions. | Log fields can contain attacker-chosen text. This is the first, weakest layer against prompt injection; project 9 tests it properly. | SI-10 |
+| The query is a fixed template in my code. Claude only fills the blanks (machine, hours). | A model that writes its own queries can read anything the account can read. Filling blanks is the smallest useful power. | NIST 800-53 AC-6 least privilege |
+| Tool inputs are checked by a strict schema and clamped in code (1 to 168 hours, one week). | Never trust tool input, even from my own agent. | SI-10 input validation |
+| The agent has its own indexer account with a read-only role on `wazuh-alerts-*`, never `admin`. | One identity per job, the same pattern as the lab's scanner account: every query is attributable and scoped. | AC-2, AC-6, IA-2 |
+| The Wazuh indexer stays bound to `127.0.0.1`. The agent reaches it through an SSH tunnel. | Opening port 9200 to the network would let any lab host try passwords against the store of every log I collect. | SC-7 boundary protection, AC-17 remote access |
+| The certificate is checked against Wazuh's own CA, at `127.0.0.1`, the only address on it. No verification turned off. | An agent that skips the check can be fed fake alerts and would report them as fact. Proven both ways: the real certificate passes, `localhost` is rejected with a hostname mismatch. | SC-8, SC-23 session authenticity |
+| Only named fields leave the lab: who, where, which rule, which program ran (`image`), what started it (`parentImage`), which file was written (`targetFilename`). Command lines are sent only after `redact.py` strips passwords, keys, tokens and encoded payloads and cuts them to 300 characters (`test_redact.py`, 14 cases). The raw log line never leaves. Results are capped at 50 alerts plus a per-rule count of every match. | Whatever a tool returns goes to the model provider. Paths name things; command lines are free text and can hold secrets or attacker-chosen instructions. Send the least that answers the question, and clean what must be sent. | AC-4 information flow, SC-28, SI-10, SA-8 |
+| The system prompt says text inside alerts is data, never instructions. | Log fields can contain attacker-chosen text. This is the first, weakest layer against prompt injection; project 9 tests it properly. | SI-10 |
+| No tool can change anything. Every answer ends with what a human should check. | Project 1 is read-only by rule. Write actions will need an approval step. | AC-6, AU-6 |
+| The API key and the agent's password live in a git-ignored `.env`, with a gitleaks pre-commit hook as backstop. | Moves to Vault in project 3. | IA-5 |
+
+### The web page is a new door, so it is built like one
+
+| Control | Why |
+|---|---|
+| Listens on `127.0.0.1` only | Nothing else on the network can reach it |
+| A random token, new at every start, is required on every request | Another web page open in the same browser cannot quietly make the agent run, and spend |
+| Host header pinned to `127.0.0.1` / `localhost` | Blocks DNS rebinding, where a hostile site points its own name at your laptop |
+| Strict Content-Security-Policy, no third-party script at all | The page can run only its own code |
+| Data from Wazuh and Claude is inserted as text, never as HTML; the answer's Markdown goes through a renderer that escapes everything first | Alert fields can hold attacker-chosen text, and it must never become live markup |
+| `Referrer-Policy: no-referrer` | The token never leaks to another site |
+
+## Evidence
+
+### The loop works, and stays grounded
+
+![First run of the agent](images/agent-01-first-run.png)
+
+*First run, against a fake Wazuh tool. Round 1: Claude asks for
+`search_wazuh_alerts` with WKS01 and 24 hours; my code runs it. Round 2: the
+report, citing time and rule id for every claim.*
+
+The deletion test: I removed one alert from the fake data and ran it again. That
+finding vanished from the report entirely. The facts come from the tool; the
+words come from the model. Whoever controls the tool controls what the agent can
+know, so the tool and its account are the thing to secure.
+
+### The agent's identity, proven step by step
+
+![The Wazuh indexer listens on localhost only](images/agent-03-indexer-localhost-only.png)
+
+*`ss -tlnp` on SIEM01: the indexer listens on `[::ffff:127.0.0.1]:9200`, which
+is 127.0.0.1 written in IPv6 form. A direct connection from the laptop is
+refused, by design.*
+
+![Through the tunnel, the indexer asks who I am](images/agent-04-tunnel-unauthorized.png)
+
+*Through the SSH tunnel the laptop reaches the indexer, which answers
+`Unauthorized` to a request with no login. The path works and the door is still
+locked.*
+
+![The agent's role: read on alerts, nothing else](images/agent-05-role-created.png)
+
+*Role `agent-read-alerts`: no cluster permissions, `read` on `wazuh-alerts-*`
+only, no tenants. The archives are not listed, so a request for them is refused
+whoever sends it.*
+
+![Before mapping: the account is known but has no rights](images/agent-06-before-mapping-403.png)
+
+*Before the role is mapped: `svc-ask-siem`, with its correct password, gets
+`403 no permissions for [indices:data/read/search]`. 401 means "I do not know who
+you are"; 403 means "I know who you are, and the answer is no". The password
+never appears on the command line: curl prompts for it.*
+
+![The role mapped to the agent's account](images/agent-07-role-mapped.png)
+
+*`svc-ask-siem` mapped directly to `agent-read-alerts`.*
+
+![After mapping: the same request succeeds](images/agent-08-after-mapping-count.png)
+
+*The identical command after mapping returns `"count":460349`. Same account,
+same password, same question: the only change is the role, so the role is what
+grants the access. 460,349 alerts is also why the tool never hands the model
+everything.*
+
+![The boundary holds: archives refused](images/agent-09-archives-denied-403.png)
+
+*Minutes later, the same account asks for the archives, which hold every raw
+event, and gets `403`. The boundary holds whoever, or whatever, holds the
+password.*
+
+![The laptop verifies the indexer's certificate](images/agent-10-tls-verified-401.png)
+
+*No `-k`: the certificate is checked against Wazuh's CA, at the one address
+printed on it. Getting a reply at all is the proof the check passed.*
+
+### It fails honestly
+
+![The agent fails honestly when Wazuh is unreachable](images/agent-11-tunnel-down-no-guessing.png)
+
+*The first real run happened with the tunnel closed. The agent said it could not
+answer rather than inventing a picture of WKS01: "I have no alerts, rule counts
+or timestamps to cite, so I won't guess." It retried once, a wasted round, so the
+error text now tells it that retrying will not help until a human fixes the
+connection.*
+
+### The first real run
+
+![Round 1: the real search](images/agent-12-first-real-run-search.png)
+
+*Claude fills the two blanks. The tool searches as `svc-ask-siem` through the
+tunnel, finds 694 alerts across 17 rules, and sends Claude a per-rule count of
+all 694 plus the 50 highest-level alerts: 14,481 characters, not 694 raw
+events.*
+
+![Round 2: the answer](images/agent-13-first-real-run-answer.png)
+
+*The answer separates what it saw (50 alerts) from what it only counted (all
+694), cites rule and time for every claim, and labels its one timing-based
+inference as a guess.*
+
+![The hand-off to a human](images/agent-14-first-real-run-next-steps.png)
+
+*It ends with what a human should check, and changes nothing. Two rounds, about
+10,000 tokens.*
+
+### Checking the agent's work
+
+An agent's answer is a junior analyst's report: every claim is checked before
+anyone acts on it. First claim checked: "rule 92058 fired every hour at about
+:40".
+
+![Rule 92058 in Discover: 24 hits, one per hour](images/agent-16-human-check-92058.png)
+
+*24 hits, one per hour at about :40. The claim holds. The full event also showed
+what the agent could not see at the time: the program is
+`C:\Windows\System32\sdbinst.exe`, started by the built-in Program Compatibility
+Assistant service (`svchost.exe ... -s PcaSvc`). Windows' own scheduled
+behaviour, not an attacker, so the level 12 rating is very likely a false
+positive.*
+
+That check led to a decision: send the agent the program paths, and the command
+lines through the secret filter. The same question afterwards, nothing else
+changed:
+
+| | Before (rule names and times only) | After (paths and cleaned command lines) |
+|---|---|---|
+| Rule 92058, level 12, hourly | "Worth identifying what triggers it" | `sdbinst.exe -m -bg` started by `svchost.exe ... -s PcaSvc`: "fits normal Windows behaviour" |
+| Rule 92217, executables in the Windows folder | No explanation possible | `AM_Delta_Patch_...exe` written by `svchost.exe` to `SoftwareDistribution\Download\Install`: Defender definition updates |
+| Rule 92212, level 14 | Likely false alarm, from the filename alone | Same verdict, now naming the writing process, 32-bit PowerShell |
+
+## What I learned
+
+- **An agent is three parts: a model, a loop, and tools.** The model never runs
+  anything. It asks; my code decides whether to run it.
+- **The agent only knows what its tools return.** Proven by the deletion test.
+- **Data minimisation has a visible cost.** Withholding program names kept data
+  in the lab but left the agent unable to explain alerts. The fix was not to send
+  everything, but to send paths and filter the free text.
+- **An agent is only as good as its context.** It could not tell that an IP
+  address was the lab's own scanner. That gap is why stage 2 adds an identity
+  and asset lookup.
+- **Agents over-claim.** Early runs offered to search other machines, which the
+  script cannot do. Check what an agent says it can do against the code.
+- **Agents can catch your bugs.** It noticed its per-rule counts summed to 724
+  while the total was 725. The summary listed only the top 20 rules; the 21st had
+  fallen off. Now up to 100 are listed, and any remainder is reported as a count
+  instead of disappearing.
+
+## What broke
+
+![Running the script from the wrong folder](images/agent-02-wrong-folder.png)
+
+*First attempts: stray characters pasted before a command, then the script run
+from one folder too high.*
+
+- A direct connection to the indexer was refused. Not a network problem: it is
+  bound to localhost, which led to the tunnel.
+- The certificate file was not where the docs usually say. Reading
+  `opensearch.yml` gave the real path. Ask the configuration, do not guess.
+- Windows curl refused the indexer with `the revocation status is unknown`.
+  Wazuh's homemade CA publishes no revocation list. `--ssl-no-revoke` skips only
+  that check. The design debt it exposes: a stolen indexer certificate could not
+  be revoked, only replaced by re-issuing from a new CA.
+- Python 3.13+ refused the same CA for lacking a "key usage" label. The code
+  relaxes only that rule; the chain and the address are still checked.
+- The first display test crashed on Windows' old text encoding, which cannot
+  print `✓`. The display now forces UTF-8.
 
 ## Stages
 
@@ -54,12 +252,12 @@ Three parts:
 |---|---|---|
 | 0 | Virtual environment, `anthropic` and `python-dotenv`, key in `.env` | Done 2026-10-13 |
 | 1a | The loop by hand, with a fake Wazuh tool returning three made-up alerts | Done 2026-10-13 |
-| 1b | Swap the fake tool for a real, read-only Wazuh query | Done 2026-10-15: first real run against SIEM01 |
-| 1c | A web face on the same loop (`web.py`), local only, token-gated | Done 2026-10-16 |
-| 2 | Add a read-only AD lookup tool | Not started |
-| 3 | Move the loop to the Anthropic SDK's Tool Runner | Not started |
+| 1b | A real, read-only Wazuh search with its own identity and verified TLS | Done 2026-10-15 |
+| 1c | A web face on the same loop, local only, token-gated | Done 2026-10-16 |
+| 2 | A read-only Active Directory lookup tool | Next |
+| 3 | The same agent on the Anthropic SDK's Tool Runner | Not started |
 
-## How to run
+## Run it yourself
 
 Once, in Git Bash inside this folder:
 
@@ -72,260 +270,23 @@ pip install -r requirements.txt
 Then, every time:
 
 1. Open the tunnel in a second window and leave it open:
-   `ssh -N -L 9200:127.0.0.1:9200 nantwi@192.168.20.2`
-2. Ask a question:
+   `ssh -N -o ServerAliveInterval=30 -L 9200:127.0.0.1:9200 <user>@<siem-host>`
+2. Ask from the terminal, or open the web page:
 
 ```bash
-source .venv/Scripts/activate
 python agent.py "Is anything unusual happening on WKS01 in the last 24 hours?"
-```
-
-Files this needs that are never committed:
-
-- `.env` beside `agent.py`: `ANTHROPIC_API_KEY`, `WAZUH_INDEXER_USER`, `WAZUH_INDEXER_PASSWORD` (single-quoted)
-- `certs/wazuh-root-ca.pem`: Wazuh's public CA certificate, copied from `/etc/wazuh-indexer/certs/root-ca.pem` on SIEM01. The `.pem`, never the `.key`.
-
-`agent.py` is the agent: the brief, the tool, the loop. `display.py` only draws it
-in the terminal with the `rich` library and changes nothing about how it thinks.
-
-### The web face
-
-```bash
 python web.py
 ```
 
-Then open the link it prints. It shows each step live as it happens: Claude
-thinking, the order it places from the menu, what Wazuh returned (per-rule bar
-chart, the 50 alerts Claude received), and the answer.
+Files it needs that are never committed:
 
-The agent has its own animated logo, a shield with a radar sweep inside, and it
-reacts to what the agent is doing: a slow cyan sweep while idle or thinking,
-fast and green while searching Wazuh, gold while writing, a drawn check when the
-answer is ready, a red cross on errors. When a question starts, the logo glides
-from the centre of the page into a side panel that stays beside the results
-rather than over them. That panel shows the live pipeline (Claude, agent.py,
-SSH tunnel, Wazuh, with a packet travelling between them as each event
-arrives), what the packet is carrying, and a running clock, rounds, alerts and
-tokens. Motion is switched off for anyone whose system asks for reduced motion,
-and the panel skips ahead rather than lag when the tab is in the background.
+- `.env` beside `agent.py`: `ANTHROPIC_API_KEY`, `WAZUH_INDEXER_USER`, `WAZUH_INDEXER_PASSWORD` (single-quoted)
+- `certs/wazuh-root-ca.pem`: Wazuh's public CA certificate from `/etc/wazuh-indexer/certs/root-ca.pem` on the SIEM. The `.pem`, never the `.key`.
 
-![A real question, start to finish, at twice the speed](images/agent-15-web-run.gif)
-
-*A real run against SIEM01, at twice the speed: the logo moves into the side
-panel, turns green while Wazuh is searched (719 alerts, 20 rules), gold while
-Claude writes, and draws a check when the answer is ready. The full recording,
-muted, is [`images/agent-15-web-run.mp4`](images/agent-15-web-run.mp4).*
-
-**One agent, two faces.** The loop lives once, in `agent.run_agent()`, and reports
-each step as an event. `agent.py`'s terminal face and `web.py` both consume the
-same events, so the agent cannot behave differently depending on how it is shown.
-
-A web page in front of an agent is a new door, so it is built like one:
-
-| Control | Why |
+| File | What it does |
 |---|---|
-| Listens on `127.0.0.1` only | Nothing else on the network can reach it |
-| A random token, new at every start, is required on every request | Another web page open in the same browser cannot quietly make the agent run, and spend |
-| Host header pinned to `127.0.0.1` / `localhost` | Blocks DNS-rebinding, where a hostile site points its own name at your laptop |
-| Strict Content-Security-Policy, no third-party script at all | The page can run only its own code |
-| Data from Wazuh and Claude is inserted as text, never as HTML. The answer's Markdown is rendered by a small renderer that escapes everything first | Alert fields can hold attacker-chosen text; it must never become live markup (stored XSS through the SIEM) |
-| `Referrer-Policy: no-referrer` | The token never leaks to another site |
-
-## Evidence
-
-### Stage 1a: the loop works, and stays grounded
-
-![First run of the agent](images/agent-01-first-run.png)
-
-*Round 1 ends in `tool_use`: Claude asks for `search_wazuh_alerts` with WKS01
-and 24 hours. My code runs it and sends back 622 characters. Round 2 ends in
-`end_turn` with the report. Every claim cites the alert's time and rule id.*
-
-The deletion test: I removed the `svc-greenbone` alert from the fake data and
-ran it again. That finding vanished from the report entirely. The facts come
-from the tool; the words come from the model. Whoever controls the tool
-controls what the agent can know, so the tool and its account are the thing to
-secure.
-
-### Stage 1b: reaching the indexer without exposing it
-
-![How the laptop reaches a database that only answers from inside](images/agent-doors-animated.svg)
-
-*The indexer has no door on the network side. The laptop comes in through the
-SSH door it already holds a key for, and sshd makes the call from inside
-SIEM01, where the indexer does answer.*
-
-![The Wazuh indexer listens on localhost only](images/agent-03-indexer-localhost-only.png)
-
-*`ss -tlnp` on SIEM01: the indexer (`java`) listens on `[::ffff:127.0.0.1]:9200`,
-which is 127.0.0.1 written in IPv6 form. A direct connection from the laptop is
-refused, by design.*
-
-![Through the tunnel, the indexer asks who I am](images/agent-04-tunnel-unauthorized.png)
-
-*Through `ssh -N -L 9200:127.0.0.1:9200`, the laptop reaches the indexer, which
-answers `Unauthorized` to a request with no login. The path works and the
-door is still locked.*
-
-![The agent's role: read on alerts, nothing else](images/agent-05-role-created.png)
-
-*Role `agent-read-alerts` as saved: no cluster permissions, `read` on
-`wazuh-alerts-*` only, no document or field restrictions yet, no tenants. The
-archives index is not listed, so a request for it is refused by the indexer
-whoever sends it.*
-
-![Before mapping: the account is known but has no rights](images/agent-06-before-mapping-403.png)
-
-*Before the role is mapped, `svc-ask-siem` with its correct password asks for
-a count of alerts and gets `403` with `no permissions for
-[indices:data/read/search]`, naming the user and `backend_roles=[]`. Compare
-the `Unauthorized` (401) above: 401 means "I do not know who you are"
-(authentication failed), 403 means "I know who you are, and the answer is no"
-(authorization failed). The password never appears on the command line: curl
-prompts for it.*
-
-![The role mapped to the agent's account](images/agent-07-role-mapped.png)
-
-*`svc-ask-siem` mapped directly as a user to `agent-read-alerts`. No backend
-roles: the account lives only in the indexer.*
-
-![After mapping: the same request succeeds](images/agent-08-after-mapping-count.png)
-
-*The identical command after mapping returns `"count":460349` across 120
-shards with none failed. Same account, same password, same question: the only
-change is the role, so the role is what grants the access. 460,349 alerts is
-also why the tool will never hand the model everything: it returns a capped,
-filtered slice with a total.*
-
-![The boundary holds: archives refused](images/agent-09-archives-denied-403.png)
-
-*The same account, minutes later, asks to count `wazuh-archives-*` and gets
-`403`. The archives hold every event Wazuh collects, not only the ones a rule
-raised. The role names alerts only, so the boundary holds, whoever or whatever
-is holding the password. `backend_roles=[]` is expected: the role is mapped to
-the user directly, not through a backend role.*
-
-![The laptop verifies the indexer's certificate](images/agent-10-tls-verified-401.png)
-
-*No `-k`: curl checks the indexer's certificate against Wazuh's CA, at the one
-address printed on it, and gets through to the indexer, which asks for a login
-(401). Getting an answer at all is the proof the certificate passed.*
-
-### Stage 1b: the first real run, with the tunnel down
-
-![The agent fails honestly when Wazuh is unreachable](images/agent-11-tunnel-down-no-guessing.png)
-
-*The first real run happened with the tunnel closed. The tool returned an error
-both times, and the agent said it could not answer rather than inventing a
-picture of WKS01: "I have no alerts, rule counts or timestamps to cite, so I
-won't guess." It retried once, a wasted round, so the error text now tells it
-that retrying will not help until a human fixes the connection.*
-
-### Stage 1b: the first real run
-
-![Round 1: the real search](images/agent-12-first-real-run-search.png)
-
-*Claude fills the two blanks (WKS01, 24 hours). The tool searches as
-`svc-ask-siem` through the tunnel with the certificate checked, and finds 694
-alerts across 17 rules. Claude receives a per-rule count of all 694 plus the 50
-highest-level alerts: 14,481 characters, not 694 raw events.*
-
-![Round 2: the answer](images/agent-13-first-real-run-answer.png)
-
-*The answer separates what it saw (50 alerts) from what it only counted (all
-694), cites rule ids and times for every claim, and labels its one timing-based
-inference as a guess. It also says what it could not see: command lines, file
-names and accounts. Those fields are deliberately not sent (see design
-decisions), and this is the cost of that choice made visible.*
-
-![The hand-off to a human](images/agent-14-first-real-run-next-steps.png)
-
-*It ends with what a human should check, and changes nothing. Two rounds,
-8,064 tokens in, 2,078 out.*
-
-### Checking the agent's work
-
-An agent's answer is a junior analyst's report: every claim gets checked before
-anyone acts on it. First claim checked, 2026-10-17: "rule 92058 fired every hour
-at about :40".
-
-![Rule 92058 in Discover: 24 hits, one per hour](images/agent-16-human-check-92058.png)
-
-*Discover, `agent.name:WKS01 and rule.id:92058`, last 24 hours: 24 hits, one per
-hour at about :40. The claim holds. The full event also shows what the agent
-could not see, because those fields are deliberately not sent to it: the
-program is `C:\Windows\System32\sdbinst.exe` (Microsoft's Application
-Compatibility Database Installer), started by `svchost.exe -k
-LocalSystemNetworkRestricted -p -s PcaSvc`, the built-in Program Compatibility
-Assistant service. That points to Windows' own scheduled behaviour rather than an
-attacker installing a shim, so the level 12 rating is very likely a false
-positive. The agent was right to flag it and right not to call it either way.*
-
-That check led to a decision: send the agent the program paths, and the command
-lines through a secret filter (see design decisions). The same question asked
-again afterwards, with nothing else changed, produced the difference that
-decision was for:
-
-| | Before (rule names and times only) | After (paths and cleaned command lines) |
-|---|---|---|
-| Rule 92058, level 12, hourly | "Worth identifying what triggers it" | `sdbinst.exe -m -bg` started by `svchost.exe ... -s PcaSvc`, hourly: "fits normal Windows behaviour" |
-| Rule 92217, executables in the Windows folder | No explanation possible | `AM_Delta_Patch_1.461.61.0.exe` and `...70.0.exe` written by `svchost.exe` to `SoftwareDistribution\Download\Install`: Defender definition updates |
-| Rule 92212, level 14 | Likely false alarm, from the filename alone | Same verdict, now also naming the writing process, 32-bit PowerShell |
-
-It still said what it could not see (which program started the 32-bit
-PowerShell, what changed in the Administrators group) and sent those to a human.
-
-## What I learned
-
-- **An agent is three parts: a model, a loop, and tools.** The model never runs
-  anything. It asks; my code decides whether to run it.
-- **The agent only knows what its tools return.** Proven by the deletion test above.
-- **An agent is only as good as its context.** It could not tell that
-  `192.168.20.3` is my vulnerability scanner, so it could not explain a failed
-  `administrator` logon as the scanner's default-credential check. That gap is
-  why stage 2 adds an identity and asset lookup.
-- **Agents over-claim.** Both runs ended by offering to search other machines.
-  The script answers one question and stops. Check what an agent says it can do
-  against the code.
-- **A fast failure and a slow failure mean different things.** A refused
-  connection in two seconds means the host answered "nothing here". A firewall
-  drop hangs until it times out.
-
-## What broke
-
-![Running the script from the wrong folder](images/agent-02-wrong-folder.png)
-
-*First attempts: stray characters pasted in front of the activate command, then
-`python agent.py` run from the repo root, one folder above the script, so
-Python could not find it.*
-
-- Activation also failed once because the PowerShell form of the command was
-  pasted into Git Bash, which needs `source .venv/Scripts/activate`.
-
-- `curl https://192.168.20.2:9200` was refused. Not a network problem: the
-  dashboard on port 443 answered over the same path. The indexer is bound to
-  localhost, which led to the tunnel decision above.
-- The certificate file is not where the docs usually say. `indexer.pem` did not
-  exist; reading `opensearch.yml` showed the real path, `wazuh-indexer.pem`.
-  Ask the configuration, do not guess.
-- Windows curl refused the indexer with `the revocation status is unknown`.
-  Wazuh's homemade CA publishes no revocation list, and Windows' TLS engine
-  (schannel) treats that as a failure. `--ssl-no-revoke` skips only that check.
-  The design debt it exposes: a stolen indexer certificate could not be revoked,
-  only replaced by re-issuing from a new CA.
-- Python 3.13+ refused the same CA: `CA cert does not include key usage
-  extension`. Its default strict mode wants modern certificate labels Wazuh's
-  CA lacks. The code relaxes only that flag; the chain and the address are still
-  checked, and a deliberate test against `localhost` still fails as it should.
-- The first display test crashed on Windows' old default text encoding, which
-  cannot print `✓`. `display.py` switches its output to UTF-8.
-- **The agent found a bug in its own tool.** Asked about the last 30 hours, it
-  noted that the window was capped at 24 (correct, by design at the time), and
-  then that the per-rule counts added up to 724 while the total was 725, so a
-  rule was missing from the summary. It was right: the summary listed only the
-  top 20 rules by count, and the 21st, a single level 14 alert, fell off. Fixed:
-  up to 100 rules are listed, and the result now carries
-  `alerts_in_rules_not_listed` so a truncated summary can never pass silently.
-  The window was raised to one week at the same time, which is safe because the
-  result is capped however wide the window is. Checked against SIEM01: 30 hours,
-  1,086 alerts, 21 rules, counts sum exactly.
+| `agent.py` | The agent: the brief, the tool, the loop |
+| `redact.py` / `test_redact.py` | The secret filter for command lines, and its 14 tests (`python test_redact.py`) |
+| `web.py` + `static/` | The web page, on the same loop |
+| `display.py` | How the terminal version looks. Changes nothing about how the agent thinks |
+| `images/build_animations.py` | Regenerates the animated diagrams from the static ones |
