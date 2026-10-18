@@ -261,6 +261,20 @@ Assistant service. That points to Windows' own scheduled behaviour rather than a
 attacker installing a shim, so the level 12 rating is very likely a false
 positive. The agent was right to flag it and right not to call it either way.*
 
+That check led to a decision: send the agent the program paths, and the command
+lines through a secret filter (see design decisions). The same question asked
+again afterwards, with nothing else changed, produced the difference that
+decision was for:
+
+| | Before (rule names and times only) | After (paths and cleaned command lines) |
+|---|---|---|
+| Rule 92058, level 12, hourly | "Worth identifying what triggers it" | `sdbinst.exe -m -bg` started by `svchost.exe ... -s PcaSvc`, hourly: "fits normal Windows behaviour" |
+| Rule 92217, executables in the Windows folder | No explanation possible | `AM_Delta_Patch_1.461.61.0.exe` and `...70.0.exe` written by `svchost.exe` to `SoftwareDistribution\Download\Install`: Defender definition updates |
+| Rule 92212, level 14 | Likely false alarm, from the filename alone | Same verdict, now also naming the writing process, 32-bit PowerShell |
+
+It still said what it could not see (which program started the 32-bit
+PowerShell, what changed in the Administrators group) and sent those to a human.
+
 ## What I learned
 
 - **An agent is three parts: a model, a loop, and tools.** The model never runs
