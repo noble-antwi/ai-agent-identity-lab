@@ -28,6 +28,7 @@ import anthropic
 from dotenv import load_dotenv
 
 import display  # How it looks in the terminal (display.py). Not how it thinks.
+from redact import clean  # Strips secrets from command lines (redact.py).
 
 HERE = Path(__file__).resolve().parent
 
@@ -54,7 +55,15 @@ FIELDS = [
     "timestamp", "agent.name", "rule.id", "rule.level", "rule.description",
     "rule.mitre.id", "data.win.system.eventID", "data.win.eventdata.targetUserName",
     "data.win.eventdata.ipAddress", "data.srcip", "data.srcuser", "data.dstuser",
+    # Which program ran, which program started it, and which file was written.
+    # Paths only: they name things, they do not carry secrets.
+    "data.win.eventdata.image", "data.win.eventdata.parentImage",
+    "data.win.eventdata.targetFilename",
+    # The full commands, arguments included. Free text, so every one passes
+    # through redact.clean() before it can leave (see COMMAND_LINES below).
+    "data.win.eventdata.commandLine", "data.win.eventdata.parentCommandLine",
 ]
+COMMAND_LINES = ("data.win.eventdata.commandLine", "data.win.eventdata.parentCommandLine")
 
 # 2. The brief. This is how the agent is told to behave.
 SYSTEM = (
@@ -134,7 +143,13 @@ def search_wazuh_alerts(agent_name: str, hours: int) -> dict:
             "count": bucket["doc_count"],
         })
 
-    alerts = [flatten(hit["_source"]) for hit in body["hits"]["hits"]]
+    alerts = []
+    for hit in body["hits"]["hits"]:
+        alert = flatten(hit["_source"])
+        for field in COMMAND_LINES:  # Secrets out before anything leaves the lab.
+            if field in alert:
+                alert[field] = clean(str(alert[field]))
+        alerts.append(alert)
     return {
         "agent_name": agent_name,
         "hours": hours,

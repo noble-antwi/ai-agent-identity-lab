@@ -315,13 +315,20 @@ function drawWazuh(ev) {
     const wrap = el("div", "wrap");
     const table = el("table");
     const cols = [["timestamp", "Time"], ["rule.level", "Lvl"], ["rule.id", "Rule"], ["rule.description", "Description"],
-                  ["data.win.eventdata.targetUserName", "Account"], ["data.win.eventdata.ipAddress", "Source IP"]];
+                  ["data.win.eventdata.image", "Program"], ["data.win.eventdata.parentImage", "Started by"],
+                  ["data.win.eventdata.targetUserName", "Account"]];
+    const short = (k, v) => (k.endsWith("mage") ? v.split(/[\\/]/).pop() : v);   // paths: show the file name
     const thead = el("tr");
     cols.forEach(([, h]) => thead.append(el("th", "", h)));
     table.append(thead);
     for (const a of r.alerts) {
       const tr = el("tr");
-      cols.forEach(([k]) => tr.append(el("td", "", a[k] === undefined ? "" : String(a[k]).replace("T", " ").slice(0, k === "timestamp" ? 19 : 200))));
+      cols.forEach(([k]) => {
+        const v = a[k] === undefined ? "" : short(k, String(a[k]));
+        const td = el("td", "", k === "timestamp" ? v.replace("T", " ").slice(0, 19) : v.slice(0, 200));
+        if (k.endsWith("mage") && a[k]) td.title = String(a[k]);   // full path on hover
+        tr.append(td);
+      });
       table.append(tr);
     }
     wrap.append(table);
@@ -393,9 +400,9 @@ function handle(ev) {
         });
       } else {
         const n = ev.result.total_matched;
-        panel.travel([2, 1], "data", `${n.toLocaleString()} alerts, 12 fields each`, () => {
+        panel.travel([2, 1], "data", `${n.toLocaleString()} alerts, secrets stripped`, () => {
           panel.mark(1, "active");
-          panel.state("searching", "Evidence in", `${n.toLocaleString()} alerts found`, "Only the chosen fields come back. The raw logs stay in the lab.");
+          panel.state("searching", "Evidence in", `${n.toLocaleString()} alerts found`, "Only the chosen fields come back, command lines cleaned of secrets. The raw logs stay in the lab.");
           countUp($("#m-alerts"), n);
         });
       }
