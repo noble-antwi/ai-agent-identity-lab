@@ -3,6 +3,9 @@
 .env.*
 *.pem
 *.key
+# Lab CA certificates: public, but lab-specific, so they stay out of the repo
+*.cer
+*.crt
 *secret*
 *token*
 .vault-token
