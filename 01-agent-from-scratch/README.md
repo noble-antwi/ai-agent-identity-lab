@@ -6,7 +6,8 @@
 
 *A real run against the lab's Wazuh SIEM, at twice the speed. The shield turns
 green while Wazuh is searched, gold while Claude writes, and draws a check when
-the answer is ready.*
+the answer is ready. Full run at normal speed:
+[YouTube](https://youtu.be/wKmEA8ltwyM).*
 
 ## In 30 seconds
 
