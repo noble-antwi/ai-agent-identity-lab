@@ -342,7 +342,10 @@ Same question, same model, the next afternoon.
 menu and used it: zero alerts from SCAN01 this week. Round 2 widened the search
 to all sources, and the examples now cover 35 rules instead of one.*
 
-![Round 3: the machine and the account](images/agent-27-rerun-lookups.png)
+![Round 2 also looked up the machine and the account](images/agent-27-rerun-lookups.png)
+
+*In the same round 2, in parallel: WKS01 from the inventory and AD, and the
+scanner's account from AD. Three rounds in all.*
 
 ![The answer](images/agent-28-rerun-answer.png)
 
