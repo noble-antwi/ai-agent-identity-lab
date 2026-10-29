@@ -27,7 +27,8 @@ trusted while it does**:
   granted the account got `403`, after it got data, and the archive of every raw
   event still returns `403`.
 - **It cannot write its own queries.** The search is a fixed template; Claude
-  only fills in two blanks, the machine and the time window.
+  only fills in the blanks: the machine, the time window and, optionally, a
+  source IP address, which must parse as a real IP or the search is refused.
 - **It knows what it is looking at.** It can ask *"what is 192.168.20.3?"* and
   *"who is svc-greenbone?"*. Machines come from the lab inventory, accounts from
   Active Directory, read over LDAPS by the agent's own AD account.
@@ -75,12 +76,12 @@ made from inside SIEM01, where the database does answer.*
 
 | Decision | Why | Control |
 |---|---|---|
-| The query is a fixed template in my code. Claude only fills the blanks (machine, hours). | A model that writes its own queries can read anything the account can read. Filling blanks is the smallest useful power. | NIST 800-53 AC-6 least privilege |
+| The query is a fixed template in my code. Claude only fills the blanks (machine, hours, optional source IP). | A model that writes its own queries can read anything the account can read. Filling blanks is the smallest useful power. | NIST 800-53 AC-6 least privilege |
 | Tool inputs are checked by a strict schema and clamped in code (1 to 168 hours, one week). | Never trust tool input, even from my own agent. | SI-10 input validation |
 | The agent has its own indexer account with a read-only role on `wazuh-alerts-*`, never `admin`. | One identity per job, the same pattern as the lab's scanner account: every query is attributable and scoped. | AC-2, AC-6, IA-2 |
 | The Wazuh indexer stays bound to `127.0.0.1`. The agent reaches it through an SSH tunnel. | Opening port 9200 to the network would let any lab host try passwords against the store of every log I collect. | SC-7 boundary protection, AC-17 remote access |
 | The certificate is checked against Wazuh's own CA, at `127.0.0.1`, the only address on it. No verification turned off. | An agent that skips the check can be fed fake alerts and would report them as fact. Proven both ways: the real certificate passes, `localhost` is rejected with a hostname mismatch. | SC-8, SC-23 session authenticity |
-| Only named fields leave the lab: who, where, which rule, which program ran (`image`), what started it (`parentImage`), which file was written (`targetFilename`). Command lines are sent only after `redact.py` strips passwords, keys, tokens and encoded payloads and cuts them to 300 characters (`test_redact.py`, 14 cases). The raw log line never leaves. Results are capped at 50 alerts plus a per-rule count of every match. | Whatever a tool returns goes to the model provider. Paths name things; command lines are free text and can hold secrets or attacker-chosen instructions. Send the least that answers the question, and clean what must be sent. | AC-4 information flow, SC-28, SI-10, SA-8 |
+| Only named fields leave the lab: who, where, which rule, which program ran (`image`), what started it (`parentImage`), which file was written (`targetFilename`). Command lines are sent only after `redact.py` strips passwords, keys, tokens and encoded payloads and cuts them to 300 characters (`test_redact.py`, 14 cases). The raw log line never leaves. Results are capped at 40 example alerts, at most 2 per rule, plus a per-rule count of every match. | Whatever a tool returns goes to the model provider. Paths name things; command lines are free text and can hold secrets or attacker-chosen instructions. Send the least that answers the question, and clean what must be sent. | AC-4 information flow, SC-28, SI-10, SA-8 |
 | The system prompt says text inside alerts is data, never instructions. | Log fields can contain attacker-chosen text. This is the first, weakest layer against prompt injection; project 9 tests it properly. | SI-10 |
 | No tool can change anything. Every answer ends with what a human should check. | Project 1 is read-only by rule. Write actions will need an approval step. | AC-6, AU-6 |
 | The API key and the agent's passwords live in a git-ignored `.env`, with a gitleaks pre-commit hook as backstop. | Moves to Vault in project 3. | IA-5 |
@@ -322,6 +323,14 @@ weeks stale and refused to read too much into it.
   reach the alerts index, only the raw archive, which the agent is denied by
   design. Quieter alerts for humans mean less evidence for the agent: a
   trade-off worth knowing about.
+
+**Fixed the same night (no AI involved in the checks):**
+
+| Change | Before | After |
+|---|---|---|
+| Examples spread across rules: every rule gets one before any gets a second, at most 2 each, 40 in all | 50 examples, all from one rule, 32,603 characters | 40 examples from 27 rules, 16,434 characters: half the size, far more to read |
+| Optional `source_ip` filter | Impossible to ask "what did this address do?" | `::1` on WKS01 this week returns its 58 local logons; `192.168.20.3` returns 0 this week, though over 30 days it appears in 154 alerts. Zero alerts is not proof it was idle: its successful scanner logons are silenced by design |
+| `source_ip` must parse as an IP address | | `not-an-ip` and `*` are refused before any search runs |
 
 ![First attempt: the tunnel was closed](images/agent-22-stage2-tunnel-closed.png)
 

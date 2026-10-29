@@ -249,6 +249,7 @@ function drawToolCall(ev) {
   const call = el("div", "call");
   call.append(el("span", "fn", ev.name));
   for (const [k, v] of Object.entries(ev.input)) {
+    if (v === "") continue;   // an unused optional blank
     const b = el("span", "blank");
     b.append(el("span", "", `${k} `), document.createTextNode(String(v)));
     call.append(b);
@@ -318,7 +319,8 @@ function drawWazuh(ev) {
     return;
   }
   const r = ev.result;
-  settle(c, `Wazuh answered: ${r.total_matched.toLocaleString()} alerts on ${r.agent_name}`);
+  const from = r.source_ip && r.source_ip !== "any" ? ` from ${r.source_ip}` : "";
+  settle(c, `Wazuh answered: ${r.total_matched.toLocaleString()} alerts on ${r.agent_name}${from}`);
 
   const stats = el("div", "stats");
   for (const [value, label, hl] of [
@@ -430,7 +432,7 @@ function handle(ev) {
       break;
     case "tool_call": {
       drawToolCall(ev);
-      const blanks = Object.values(ev.input).join(", ");
+      const blanks = Object.values(ev.input).filter((v) => v !== "").join(", ");
       const wazuh = ev.name === "search_wazuh_alerts";
       panel.travel([1], "order", `order: ${blanks}`, () => {
         panel.mark(1, "active");

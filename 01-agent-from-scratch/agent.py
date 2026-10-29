@@ -18,6 +18,7 @@ Run it:
 """
 
 import base64
+import ipaddress
 import json
 import os
 import ssl
@@ -50,9 +51,14 @@ MAX_ROUNDS = 8  # A safety stop: the loop can never run forever (or cost forever
 # IP 127.0.0.1 only, and the name check compares exactly.
 WAZUH_URL = "https://127.0.0.1:9200"
 WAZUH_CA = HERE / "certs" / "wazuh-root-ca.pem"  # Wazuh's public CA certificate
-MAX_ALERTS = 50  # Never hand the model everything: SIEM01 holds hundreds of thousands.
+MAX_ALERTS = 40  # Never hand the model everything: SIEM01 holds hundreds of thousands.
+PER_RULE = 2  # Examples per rule. One noisy rule can no longer fill every slot.
 MAX_HOURS = 168  # One week. Safe because results are capped however wide the window is.
 MAX_RULES = 100  # Per-rule summary rows. Anything beyond is still counted, as "other".
+
+# Where an alert records the address a connection came from: Windows logons,
+# Linux and firewall logs, and Sysmon network events.
+SOURCE_IP_FIELDS = ["data.win.eventdata.ipAddress", "data.srcip", "data.win.eventdata.sourceIp"]
 
 # The only fields that leave the lab. Everything else in an alert, including the
 # raw log line (full_log), stays behind: whatever the tool returns goes to Claude.
@@ -93,9 +99,10 @@ TOOLS = [
         "name": "search_wazuh_alerts",
         "description": (
             "Search Wazuh SIEM alerts for one lab machine over the last N hours "
-            "(1 to 168, one week). Read-only. Returns the total number of matching alerts, a "
-            "count per rule covering every match, and up to 50 individual alerts, "
-            "highest level first, then newest."
+            "(1 to 168, one week), optionally only those coming from one source IP "
+            "address. Read-only. Returns the total number of matching alerts, a "
+            "count per rule covering every match, and up to 40 example alerts, at "
+            "most 2 per rule, newest first, so every rule is represented."
         ),
         "input_schema": {
             "type": "object",
@@ -108,8 +115,13 @@ TOOLS = [
                     "type": "integer",
                     "description": "How many hours back to search, from 1 to 168 (one week)",
                 },
+                "source_ip": {
+                    "type": "string",
+                    "description": "Only alerts where the connection came from this IP address, "
+                                   "e.g. 192.168.20.3. An empty string means any source.",
+                },
             },
-            "required": ["agent_name", "hours"],
+            "required": ["agent_name", "hours", "source_ip"],
             "additionalProperties": False,
         },
         "strict": True,  # Claude's inputs must match the schema exactly.
@@ -159,32 +171,40 @@ TOOLS = [
 ]
 
 
-# 4. The kitchen: the real search. A fixed query with two blanks. Claude fills in
-#    the blanks (agent name, hours); it never writes the query itself.
-def search_wazuh_alerts(agent_name: str, hours: int) -> dict:
+# 4. The kitchen: the real search. A fixed query with three blanks. Claude fills
+#    in the blanks (agent name, hours, source IP); it never writes the query itself.
+def search_wazuh_alerts(agent_name: str, hours: int, source_ip: str = "") -> dict:
     hours = max(1, min(int(hours), MAX_HOURS))  # Never trust tool input blindly: clamp it.
+    filters = [
+        {"term": {"agent.name": {"value": agent_name, "case_insensitive": True}}},
+        {"range": {"timestamp": {"gte": f"now-{hours}h"}}},
+    ]
+    if source_ip.strip():
+        # Must parse as a real IP address, or the search is refused (ValueError).
+        ip = str(ipaddress.ip_address(source_ip.strip()))
+        filters.append({"bool": {"should": [{"term": {f: ip}} for f in SOURCE_IP_FIELDS],
+                                 "minimum_should_match": 1}})
     query = {
-        "size": MAX_ALERTS,
+        "size": 0,  # No plain hits: the examples come from each rule's bucket below.
         "track_total_hits": True,  # Count every match, not just the first 10,000.
-        "_source": FIELDS,
-        "sort": [{"rule.level": "desc"}, {"timestamp": "desc"}],
-        "query": {"bool": {"filter": [
-            {"term": {"agent.name": {"value": agent_name, "case_insensitive": True}}},
-            {"range": {"timestamp": {"gte": f"now-{hours}h"}}},
-        ]}},
-        # A count per rule across ALL matches, so 50 examples never hide the rest.
+        "query": {"bool": {"filter": filters}},
+        # A count per rule across ALL matches, so the examples never hide the rest,
+        # and the newest PER_RULE alerts of each rule as its examples.
         "aggs": {"by_rule": {
             "terms": {"field": "rule.id", "size": MAX_RULES},
             "aggs": {
                 "description": {"terms": {"field": "rule.description", "size": 1}},
                 "level": {"max": {"field": "rule.level"}},
+                "examples": {"top_hits": {"size": PER_RULE, "_source": FIELDS,
+                                          "sort": [{"timestamp": "desc"}]}},
             },
         }},
     }
     body = wazuh_post("/wazuh-alerts-*/_search", query)
+    buckets = body["aggregations"]["by_rule"]["buckets"]
 
     summary = []
-    for bucket in body["aggregations"]["by_rule"]["buckets"]:
+    for bucket in buckets:
         names = bucket["description"]["buckets"]
         summary.append({
             "rule_id": bucket["key"],
@@ -193,16 +213,23 @@ def search_wazuh_alerts(agent_name: str, hours: int) -> dict:
             "count": bucket["doc_count"],
         })
 
+    # Every rule gets one example before any rule gets a second, most serious first.
+    # Run two sent 50 copies of one hourly rule and nothing else.
+    ranked = sorted(buckets, key=lambda b: (-b["level"]["value"], -b["doc_count"]))
     alerts = []
-    for hit in body["hits"]["hits"]:
-        alert = flatten(hit["_source"])
-        for field in COMMAND_LINES:  # Secrets out before anything leaves the lab.
-            if field in alert:
-                alert[field] = clean(str(alert[field]))
-        alerts.append(alert)
+    for k in range(PER_RULE):
+        for bucket in ranked:
+            hits = bucket["examples"]["hits"]["hits"]
+            if k < len(hits) and len(alerts) < MAX_ALERTS:
+                alert = flatten(hits[k]["_source"])
+                for field in COMMAND_LINES:  # Secrets out before anything leaves the lab.
+                    if field in alert:
+                        alert[field] = clean(str(alert[field]))
+                alerts.append(alert)
     return {
         "agent_name": agent_name,
         "hours": hours,
+        "source_ip": source_ip.strip() or "any",
         "total_matched": body["hits"]["total"]["value"],
         "summary_by_rule": summary,
         # Alerts from rules beyond the summary rows. If this is ever above zero, the
@@ -252,7 +279,8 @@ def run_tool(name: str, tool_input: dict) -> tuple[str, bool]:
     """Our code, not Claude, decides what actually runs. Returns (result, is_error)."""
     try:
         if name == "search_wazuh_alerts":
-            result = search_wazuh_alerts(tool_input["agent_name"], tool_input["hours"])
+            result = search_wazuh_alerts(tool_input["agent_name"], tool_input["hours"],
+                                         tool_input.get("source_ip", ""))
         elif name == "lookup_host":
             result = directory.lookup_host(tool_input["host"])
         elif name == "lookup_account":
@@ -260,6 +288,8 @@ def run_tool(name: str, tool_input: dict) -> tuple[str, bool]:
         else:
             return f"Error: there is no tool called {name}.", True
         return json.dumps(result), False
+    except ValueError:  # A source_ip that is not an IP address. Refused, not searched.
+        return "Error: source_ip must be an IP address such as 192.168.20.3, or empty.", True
     except LDAPException as e:  # DC01 unreachable, certificate refused, or login refused.
         return (f"Error: could not ask Active Directory ({type(e).__name__}). "
                 "Retrying will not help until a human fixes the connection."), True

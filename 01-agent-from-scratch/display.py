@@ -61,7 +61,7 @@ def round_line(round_no: int, stop_reason: str) -> None:
 
 
 def tool_call(name: str, tool_input: dict) -> None:
-    blanks = "   ".join(f"[dim]{k}[/] [bold white]{v}[/]" for k, v in tool_input.items())
+    blanks = "   ".join(f"[dim]{k}[/] [bold white]{v}[/]" for k, v in tool_input.items() if v != "")
     console.print(f"  [{AMBER}]⚙[/]  [bold]{name}[/]   {blanks}")
 
 
@@ -88,8 +88,9 @@ def tool_result(name: str, output: str, is_error: bool) -> None:
     if name == "lookup_account":
         return account_result(result, len(output))
 
+    source = "" if result.get("source_ip", "any") == "any" else f" from [bold]{result['source_ip']}[/]"
     console.print(f"  [{GREEN}]✓[/]  Wazuh matched [bold]{result['total_matched']:,}[/] alerts on "
-                  f"[bold]{result['agent_name']}[/] in the last {result['hours']}h · "
+                  f"[bold]{result['agent_name']}[/]{source} in the last {result['hours']}h · "
                   f"{len(result['summary_by_rule'])} rules · {result['alerts_shown']} examples "
                   f"· [dim]{len(output):,} characters to Claude[/]")
 
