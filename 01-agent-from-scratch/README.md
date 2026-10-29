@@ -1,6 +1,8 @@
 # 01. Ask my SIEM: an AI agent with its own identity
 
-**Status:** working end to end against a real SIEM. Next: an Active Directory lookup tool (stage 2).
+**Status:** working end to end against a real SIEM. Stage 2 built: the agent can
+now look up machines and accounts, signing in to Active Directory over LDAPS as
+itself. Next: the same agent on the SDK's Tool Runner (stage 3).
 
 ![A real question, start to finish, at twice the speed](images/agent-15-web-run.gif)
 
@@ -26,8 +28,12 @@ trusted while it does**:
   event still returns `403`.
 - **It cannot write its own queries.** The search is a fixed template; Claude
   only fills in two blanks, the machine and the time window.
-- **Secrets are stripped before anything leaves.** Command lines pass through a
-  filter that removes passwords, keys and tokens, proven on 14 test cases.
+- **It knows what it is looking at.** It can ask *"what is 192.168.20.3?"* and
+  *"who is svc-greenbone?"*. Machines come from the lab inventory, accounts from
+  Active Directory, read over LDAPS by the agent's own AD account.
+- **Secrets are stripped before anything leaves.** Command lines and AD
+  descriptions pass through a filter that removes passwords, keys and tokens,
+  proven on 18 test cases.
 - **It checks who it is talking to.** The connection to the SIEM verifies the
   server's certificate, so nothing can impersonate the SIEM and feed it fake
   alerts.
@@ -49,8 +55,8 @@ so that none of it is magic:
 | Part | What it is | Here |
 |---|---|---|
 | The brain | Reads, reasons, decides which tool to ask for | Claude, through the Anthropic API |
-| The loop | Ask the model; if it wants a tool, run it and hand back the result; repeat | `run_agent()` in `agent.py`, capped at 5 rounds |
-| The tools | The only things the agent can touch | `search_wazuh_alerts` today; an AD lookup next |
+| The loop | Ask the model; if it wants a tool, run it and hand back the result; repeat | `run_agent()` in `agent.py`, capped at 8 rounds |
+| The tools | The only things the agent can touch | `search_wazuh_alerts`, `lookup_host`, `lookup_account`, all read-only |
 
 **One agent, two faces.** The loop lives once, in `agent.run_agent()`, and
 reports each step as an event. The terminal version and the web page both draw
@@ -77,7 +83,12 @@ made from inside SIEM01, where the database does answer.*
 | Only named fields leave the lab: who, where, which rule, which program ran (`image`), what started it (`parentImage`), which file was written (`targetFilename`). Command lines are sent only after `redact.py` strips passwords, keys, tokens and encoded payloads and cuts them to 300 characters (`test_redact.py`, 14 cases). The raw log line never leaves. Results are capped at 50 alerts plus a per-rule count of every match. | Whatever a tool returns goes to the model provider. Paths name things; command lines are free text and can hold secrets or attacker-chosen instructions. Send the least that answers the question, and clean what must be sent. | AC-4 information flow, SC-28, SI-10, SA-8 |
 | The system prompt says text inside alerts is data, never instructions. | Log fields can contain attacker-chosen text. This is the first, weakest layer against prompt injection; project 9 tests it properly. | SI-10 |
 | No tool can change anything. Every answer ends with what a human should check. | Project 1 is read-only by rule. Write actions will need an approval step. | AC-6, AU-6 |
-| The API key and the agent's password live in a git-ignored `.env`, with a gitleaks pre-commit hook as backstop. | Moves to Vault in project 3. | IA-5 |
+| The API key and the agent's passwords live in a git-ignored `.env`, with a gitleaks pre-commit hook as backstop. | Moves to Vault in project 3. | IA-5 |
+| In AD the agent is a separate account, `svc-ask-siem`: Domain Users only, marked sensitive so no service can borrow its identity. Same name as its Wazuh login, separate password. | One name per actor: wherever `svc-ask-siem` shows up in a log, it is the agent. Read access needs no grant, because any signed-in account can read most of AD. | AC-2, AC-6, IA-2 |
+| AD is reached over LDAPS (636), never plain LDAP (389), and DC01's certificate is checked against the lab's own root CA, by name. | On 389 the agent's password would cross the network readable. An unchecked certificate would let anything pretend to be DC01. | SC-8, SC-23, IA-5 |
+| The lookups read named attributes only (`ACCOUNT_ATTRIBUTES`, `HOST_ATTRIBUTES`). | AD will not limit what a signed-in account reads, so the tool must. Attributes that hold secrets (LAPS passwords, BitLocker recovery keys) are never asked for, so they cannot leak even if AD permissions are one day set wrong. | AC-4, AC-6 |
+| Account names are checked against a strict pattern, then escaped before they go into an LDAP filter. `*` is refused. | LDAP injection: an unescaped `*` would match every account in the domain. | SI-10 |
+| Machines come from a hand-kept inventory, `assets.json`, plus AD for domain-joined Windows machines. | Most of the lab is Linux or appliances that AD has never heard of, and AD stores no IP addresses. Real companies keep this in a CMDB. | CM-8 component inventory |
 
 ### The web page is a new door, so it is built like one
 
@@ -228,6 +239,45 @@ running `SecEdit.exe`): traced up the process tree to
 running its twice-daily security configuration check, was setting off the SIEM's
 own alerts.
 
+### Stage 2: a second identity, in Active Directory
+
+The first real run could not say that `192.168.20.3` is the lab's own scanner.
+Stage 2 gives the agent context: who an account is, and what a machine is.
+
+The agent gets its own AD account, in the service accounts OU beside the
+scanner's:
+
+![The agent's AD account in BIIRA/Users/ServiceAccounts](images/agent-18-ad-account-in-ou.png)
+
+*`svc-ask-siem` sits beside `svc-greenbone`: one account per non-human job.*
+
+![The new account checked from PowerShell](images/agent-19-ad-account-verified.png)
+
+*Enabled, in the right OU, and `AccountNotDelegated: True` (sensitive, cannot be
+delegated). `MemberOf` is empty: no groups beyond Domain Users, which AD never
+lists there.*
+
+Before any of it went into the agent, a small script, `ldap_check.py`, signed in
+as that account over LDAPS:
+
+![Signed in over LDAPS as the agent, TLS 1.3](images/agent-20-ldaps-signin-as-agent.png)
+
+*TLS 1.3, and DC01 confirms the caller: `u:CORP\svc-ask-siem`, the agent and
+nobody else. The "last logon" is this very sign-in, recorded under the agent's
+own name. (First version of the script; it now prints exactly what Claude would
+receive.)*
+
+Then the two tools, called directly with no AI involved:
+
+| Call | What came back |
+|---|---|
+| `lookup_host("192.168.20.3")` | SCAN01, the Greenbone scanner on the BlueTeam VLAN, which runs authenticated scans as `svc-greenbone`. Not domain-joined |
+| `lookup_host("WKS01")` | Inventory entry plus AD: domain-joined, in `BIIRA/Computers/Workstations`, Windows 11 Pro |
+| `lookup_host("192.168.50.77")` | Not in the inventory, but on the EnterpriseLAN VLAN, where workstations get DHCP addresses |
+| `lookup_account("svc-greenbone")` | Enabled user in `BIIRA/Users/ServiceAccounts`, member of `SG-Scanner-LocalAdmin`, sensitive |
+| `lookup_account("CORP\WKS01$")` | A computer account, primary group Domain Computers |
+| `lookup_account("*")` | Refused: not a valid account name. No search was run |
+
 ## What I learned
 
 - **An agent is three parts: a model, a loop, and tools.** The model never runs
@@ -245,6 +295,15 @@ own alerts.
   while the total was 725. The summary listed only the top 20 rules; the 21st had
   fallen off. Now up to 100 are listed, and any remainder is reported as a count
   instead of disappearing.
+- **In AD, "read-only" is the default, not something you grant.** A brand-new
+  account with no groups can already read who is in Domain Admins. That is what
+  attackers map first, so the agent's tool, not AD, decides what it reads.
+- **AD does not know half the lab.** Only Windows machines that joined the
+  domain have an AD record, and AD stores no IP addresses. Identity context and
+  asset context are two different sources.
+- **A certificate is issued to a name.** The agent must dial
+  `DC01.corp.biirabank.com`, not `192.168.50.2`, or the name check fails: the
+  same lesson as `127.0.0.1` for Wazuh.
 
 ## What broke
 
@@ -265,6 +324,10 @@ from one folder too high.*
   relaxes only that rule; the chain and the address are still checked.
 - The first display test crashed on Windows' old text encoding, which cannot
   print `✓`. The display now forces UTF-8.
+- My laptop could not find `DC01.corp.biirabank.com`: "DNS name does not exist".
+  It asks public DNS, and the domain's internal names are published only on
+  DC01. A one-line `hosts` entry fixes it for this laptop; the lasting fix is
+  Tailscale split DNS, which sends only `corp.biirabank.com` questions to DC01.
 
 ## Stages
 
@@ -274,7 +337,7 @@ from one folder too high.*
 | 1a | The loop by hand, with a fake Wazuh tool returning three made-up alerts | Done 2026-10-13 |
 | 1b | A real, read-only Wazuh search with its own identity and verified TLS | Done 2026-10-15 |
 | 1c | A web face on the same loop, local only, token-gated | Done 2026-10-16 |
-| 2 | A read-only Active Directory lookup tool | Next |
+| 2 | Read-only machine and account lookups: lab inventory plus Active Directory over LDAPS, as the agent's own AD account | Built 2026-10-29 |
 | 3 | The same agent on the Anthropic SDK's Tool Runner | Not started |
 
 ## Run it yourself
@@ -300,13 +363,20 @@ python web.py
 
 Files it needs that are never committed:
 
-- `.env` beside `agent.py`: `ANTHROPIC_API_KEY`, `WAZUH_INDEXER_USER`, `WAZUH_INDEXER_PASSWORD` (single-quoted)
+- `.env` beside `agent.py`: `ANTHROPIC_API_KEY`, `WAZUH_INDEXER_USER`, `WAZUH_INDEXER_PASSWORD` (single-quoted), `AD_BIND_USER` (as `name@domain`), `AD_BIND_PASSWORD`
 - `certs/wazuh-root-ca.pem`: Wazuh's public CA certificate from `/etc/wazuh-indexer/certs/root-ca.pem` on the SIEM. The `.pem`, never the `.key`.
+- `certs/biira-root-ca.pem`: the lab root CA's public certificate (CA01), which DC01's LDAPS certificate chains to.
+
+The laptop must also resolve `DC01.corp.biirabank.com` (a `hosts` entry, or
+split DNS). Check the AD side alone with `python ldap_check.py`.
 
 | File | What it does |
 |---|---|
-| `agent.py` | The agent: the brief, the tool, the loop |
-| `redact.py` / `test_redact.py` | The secret filter for command lines, and its 14 tests (`python test_redact.py`) |
+| `agent.py` | The agent: the brief, the tool menu, the loop |
+| `directory.py` | `lookup_host` and `lookup_account`: the inventory and AD over LDAPS, allow-listed attributes only |
+| `assets.json` | The lab inventory: every machine, its network and its role |
+| `ldap_check.py` | Proves the AD sign-in over LDAPS and shows one lookup, with no AI involved |
+| `redact.py` / `test_redact.py` | The secret filter for command lines and AD descriptions, and its 18 tests (`python test_redact.py`) |
 | `web.py` + `static/` | The web page, on the same loop |
 | `display.py` | How the terminal version looks. Changes nothing about how the agent thinks |
 | `images/build_animations.py` | Regenerates the animated diagrams from the static ones |

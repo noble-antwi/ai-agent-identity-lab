@@ -29,6 +29,11 @@ CASES = [
      "powershell.exe -NoP -EncodedCommand [REMOVED:encoded command, 40 chars]"),
     ("app.exe --apikey sk-lab-0123456789abcdef",
      "app.exe --apikey [REDACTED:secret]"),
+    # AD description fields: free text written by people.
+    ("Temp password is Winter2026! - change at first logon",
+     "Temp password is [REDACTED:password] - change at first logon"),
+    ("Backup operator. pw: Gr33nF1eld",
+     "Backup operator. pw: [REDACTED:password]"),
 
     # Ordinary command lines that must pass through untouched.
     ("C:\\WINDOWS\\system32\\svchost.exe -k LocalSystemNetworkRestricted -p -s PcaSvc",
@@ -37,6 +42,10 @@ CASES = [
      "\"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\" -ExecutionPolicy Bypass -File C:\\scripts\\check.ps1"),
     ("net user bob /domain",
      "net user bob /domain"),
+    ("Ask my SIEM agent: read-only AD lookups over LDAPS",
+     "Ask my SIEM agent: read-only AD lookups over LDAPS"),
+    ("Built-in account for administering the computer/domain",
+     "Built-in account for administering the computer/domain"),
 ]
 
 

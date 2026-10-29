@@ -10,6 +10,9 @@ programs and files, not secrets.
 Each removal is replaced with a label saying what was removed, so the model (and
 a human reading its answer) knows something was there without seeing it.
 
+AD description fields go through the same filter (directory.py): they are free
+text too, and the classic place an admin leaves "temp password is ...".
+
 This is a safety net, not a guarantee. A secret in an unusual shape can still get
 through, which is why command lines were a deliberate decision, not a default.
 """
@@ -27,6 +30,8 @@ RULES = [
     # password=x, pwd=x, token=x, apikey=x, secret=x  (connection strings, query strings)
     (re.compile(r"(?i)\b((?:password|passwd|pwd|token|apikey|api_key|access_key|secret|client_secret)\s*=\s*)([^;&\s\"']+)"),
      r"\1[REDACTED:secret]"),
+    # Prose, as people write it in AD description fields: "temp password is x", "pw: x"
+    (re.compile(r"(?i)\b((?:password|passwd|pwd|pw)\s*(?:is\s+|:\s*))(\S+)"), r"\1[REDACTED:password]"),
     # ConvertTo-SecureString "Winter2026!" -AsPlainText
     (re.compile(r"(?i)(ConvertTo-SecureString\s+)(\"[^\"]*\"|'[^']*'|\S+)"), r"\1[REDACTED:password]"),
     # https://user:pass@host  ->  https://user:[REDACTED:password]@host

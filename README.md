@@ -37,13 +37,17 @@ secrets are stripped before anything leaves. Includes the 401/403 proof of its
 permissions, a verified TLS connection, a tested secret filter, and a case where
 the agent found a bug in its own tool.
 
-**Status:** working end to end. Next: an Active Directory lookup tool.
+It can also look up machines and accounts, signing in to Active Directory over
+LDAPS as its own AD account and reading allow-listed attributes only.
+
+**Status:** working end to end, with Wazuh and AD. Next: the same agent on the
+SDK's Tool Runner.
 
 ## All projects
 
 | # | Project | Status |
 |---|---------|--------|
-| 01 | [Ask my SIEM: an AI agent with its own identity](01-agent-from-scratch/) | **Working** · AD lookup next |
+| 01 | [Ask my SIEM: an AI agent with its own identity](01-agent-from-scratch/) | **Working** · Wazuh + AD lookups; Tool Runner next |
 | 02 | Okta MCP server | Planned |
 | 03 | Agent identity with Okta + Vault | Planned |
 | 04 | Service account hunter | Planned |

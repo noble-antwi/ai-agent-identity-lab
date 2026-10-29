@@ -82,7 +82,7 @@ def ask(q: str = Query(min_length=3, max_length=500), token: str = ""):
             for event in agent.run_agent(q):
                 if event["type"] == "tool_result" and not event["is_error"]:
                     # Send the page the parsed result so it can draw it.
-                    event = {"type": "tool_result", "is_error": False,
+                    event = {"type": "tool_result", "name": event["name"], "is_error": False,
                              "result": json.loads(event["output"]),
                              "characters": len(event["output"])}
                 yield f"data: {json.dumps(event)}\n\n"

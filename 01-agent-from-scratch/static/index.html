@@ -20,6 +20,7 @@
       <span class="pill identity" title="The identity every search runs as"><b>svc-ask-siem</b></span>
       <span class="pill">read-only</span>
       <span class="pill mono">wazuh-alerts-*</span>
+      <span class="pill mono">AD over LDAPS</span>
       <span class="pill status" id="tunnel"><i></i><span>checking tunnel</span></span>
     </div>
   </header>
@@ -37,6 +38,7 @@
         <div class="st"><div class="orb">›_</div><div class="st-text"><b>agent.py</b><span>your laptop · runs the tools</span></div></div>
         <div class="st"><div class="orb">⇄</div><div class="st-text"><b>SSH tunnel</b><span>port 22 · certificate checked</span></div></div>
         <div class="st lab"><div class="orb">W</div><div class="st-text"><b>Wazuh</b><span>SIEM01 · alerts only</span></div></div>
+        <div class="st lab"><div class="orb">AD</div><div class="st-text"><b>DC01</b><span>LDAPS 636 · inventory + AD</span></div></div>
         <div class="packet" id="packet"></div>
       </div>
       <p class="carry">Carrying <b id="carry">nothing yet</b></p>
@@ -91,7 +93,7 @@
         </div>
         <p class="eyebrow">Grounded answers from your own SIEM</p>
         <h1>Ask my <span class="grad">SIEM</span></h1>
-        <p class="lede">A read-only AI analyst for the Biira Bank lab. It searches Wazuh under its own identity and answers only from what it finds.</p>
+        <p class="lede">A read-only AI analyst for the Biira Bank lab. It searches Wazuh, looks up machines and accounts in Active Directory under its own identity, and answers only from what it finds.</p>
         <form id="form" autocomplete="off">
           <input id="q" maxlength="500" placeholder="Is anything unusual happening on WKS01 in the last 24 hours?">
           <button id="go" type="submit">Ask</button>
@@ -100,6 +102,7 @@
           <button type="button">Is anything unusual happening on WKS01 in the last 24 hours?</button>
           <button type="button">Were there any failed logons on WKS01 in the last 12 hours?</button>
           <button type="button">What were the most serious alerts on DC01 in the last 24 hours?</button>
+          <button type="button">Who or what is 192.168.20.3, and what has it been doing on WKS01 this week?</button>
         </div>
       </section>
 
@@ -108,7 +111,7 @@
   </div>
 
   <footer>
-    <span><i class="dot green"></i>Facts come from Wazuh</span>
+    <span><i class="dot green"></i>Facts come from Wazuh and AD</span>
     <span><i class="dot cyan"></i>Words come from Claude</span>
     <span><i class="dot red"></i>Claude never touches the lab</span>
   </footer>

@@ -1,0 +1,24 @@
+{
+  "about": "The Biira Bank lab inventory: every machine, where it lives and what it is for. Kept by hand, from the homelab README. Most of these are Linux or appliances, so Active Directory has never heard of them; this file is the only place the agent can learn what they are.",
+  "networks": [
+    {"cidr": "192.168.10.0/24", "vlan": 10, "name": "Management", "purpose": "Firewall, hypervisor and the admin workstation"},
+    {"cidr": "192.168.20.0/24", "vlan": 20, "name": "BlueTeam", "purpose": "Defensive tooling: the SIEM and the vulnerability scanner"},
+    {"cidr": "192.168.30.0/24", "vlan": 30, "name": "RedTeam", "purpose": "Attack simulation, contained by the firewall"},
+    {"cidr": "192.168.40.0/24", "vlan": 40, "name": "DevOps", "purpose": "Application hosting"},
+    {"cidr": "192.168.50.0/24", "vlan": 50, "name": "EnterpriseLAN", "purpose": "The Windows domain: domain controller, certificate authority and workstations. Workstations get their address by DHCP, so they are not listed by IP"},
+    {"cidr": "192.168.60.0/24", "vlan": 60, "name": "Monitoring", "purpose": "Observability dashboards"},
+    {"cidr": "100.64.0.0/10", "vlan": null, "name": "Tailscale", "purpose": "Remote access: the admin's devices reaching the lab through the Tailscale subnet router on the firewall"}
+  ],
+  "hosts": [
+    {"name": "FW01", "aliases": ["pfSense"], "ip": "192.168.10.1", "network": "Management", "os": "pfSense (FreeBSD)", "role": "Gateway and firewall between every VLAN; Tailscale subnet router"},
+    {"name": "ADM01", "aliases": [], "ip": "192.168.10.3", "network": "Management", "os": "Windows 11", "role": "Administration workstation, where domain admin work is done"},
+    {"name": "PVE01", "aliases": ["proxmox-01"], "ip": "192.168.10.6", "network": "Management", "os": "Proxmox VE 9 (Debian 13)", "role": "Hypervisor that hosts the lab's virtual machines"},
+    {"name": "SIEM01", "aliases": [], "ip": "192.168.20.2", "network": "BlueTeam", "os": "Ubuntu 24.04", "role": "Wazuh SIEM: collects and analyses logs from every agent"},
+    {"name": "SCAN01", "aliases": [], "ip": "192.168.20.3", "network": "BlueTeam", "os": "Ubuntu 26.04", "role": "Greenbone vulnerability scanner", "notes": "Runs scheduled, authenticated scans of Windows machines as CORP\\svc-greenbone, plus default-credential checks. Logons and probes from this address during a scan are expected; svc-greenbone signing in from any other address is not"},
+    {"name": "KALI01", "aliases": [], "ip": "192.168.30.2", "network": "RedTeam", "os": "Kali Linux", "role": "Attack simulation host", "notes": "Activity from here is a deliberate exercise, never routine"},
+    {"name": "APP01", "aliases": [], "ip": "192.168.40.2", "network": "DevOps", "os": "Ubuntu", "role": "Application host for two internal web apps"},
+    {"name": "DC01", "aliases": [], "ip": "192.168.50.2", "network": "EnterpriseLAN", "os": "Windows Server 2025", "role": "Domain controller and DNS for corp.biirabank.com"},
+    {"name": "CA01", "aliases": [], "ip": "192.168.50.3", "network": "EnterpriseLAN", "os": "Windows Server 2025", "role": "Enterprise root certificate authority (AD CS); issued DC01's LDAPS certificate"},
+    {"name": "WKS01", "aliases": [], "ip": null, "network": "EnterpriseLAN", "os": "Windows 11 Pro", "role": "Domain-joined workstation and scan target", "notes": "Address assigned by DHCP"}
+  ]
+}

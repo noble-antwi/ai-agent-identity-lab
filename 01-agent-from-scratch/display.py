@@ -38,7 +38,8 @@ def header(question: str, model: str) -> None:
     title = Text("ASK MY SIEM", style=f"bold {CYAN}")
     body = Text.assemble(("Question  ", "dim"), (question, "bold white"),
                          ("\nModel     ", "dim"), (model, "white"),
-                         ("\nTools     ", "dim"), ("search_wazuh_alerts (read-only, as svc-ask-siem)", "white"))
+                         ("\nTools     ", "dim"), ("search_wazuh_alerts, lookup_host, lookup_account", "white"),
+                         ("\nIdentity  ", "dim"), ("svc-ask-siem, read-only, in Wazuh and in AD", "white"))
     console.print()
     console.print(Panel(body, title=title, title_align="left", border_style=CYAN, box=box.ROUNDED, padding=(1, 2)))
 
@@ -64,17 +65,29 @@ def tool_call(name: str, tool_input: dict) -> None:
     console.print(f"  [{AMBER}]⚙[/]  [bold]{name}[/]   {blanks}")
 
 
-def searching():
-    return console.status(f"[{GREEN}]Searching Wazuh through the SSH tunnel...", spinner="dots")
+WHERE = {
+    "search_wazuh_alerts": "Searching Wazuh through the SSH tunnel...",
+    "lookup_host": "Checking the inventory, then asking DC01 over LDAPS...",
+    "lookup_account": "Asking DC01 over LDAPS...",
+}
 
 
-def tool_result(output: str, is_error: bool) -> None:
+def searching(name: str):
+    return console.status(f"[{GREEN}]{WHERE.get(name, 'Running the tool...')}", spinner="dots")
+
+
+def tool_result(name: str, output: str, is_error: bool) -> None:
     if is_error:
         console.print(Panel(output, title="Tool error, sent to Claude as is", border_style=RED,
                             box=box.ROUNDED, padding=(0, 2)))
         return
 
     result = json.loads(output)
+    if name == "lookup_host":
+        return host_result(result, len(output))
+    if name == "lookup_account":
+        return account_result(result, len(output))
+
     console.print(f"  [{GREEN}]✓[/]  Wazuh matched [bold]{result['total_matched']:,}[/] alerts on "
                   f"[bold]{result['agent_name']}[/] in the last {result['hours']}h · "
                   f"{len(result['summary_by_rule'])} rules · {result['alerts_shown']} examples "
@@ -93,12 +106,63 @@ def tool_result(output: str, is_error: bool) -> None:
     console.print(table)
 
 
+def facts(rows: list) -> None:
+    """A two-column list of what came back. Empty values are left out."""
+    table = Table(box=None, show_header=False, padding=(0, 2, 0, 5))
+    table.add_column(style="dim")
+    table.add_column(max_width=90)
+    for label, value in rows:
+        if value:
+            table.add_row(label, ", ".join(value) if isinstance(value, list) else str(value))
+    console.print(table)
+
+
+def host_result(result: dict, chars: int) -> None:
+    inv, ad = result.get("inventory"), result.get("active_directory") or {}
+    if not inv:
+        who = "is not in the inventory"
+    elif inv["name"].upper() == result["query"].split(".")[0].upper():
+        who = "is in the inventory"
+    else:
+        who = f"is [bold]{inv['name']}[/]"
+    console.print(f"  [{GREEN}]✓[/]  [bold]{result['query']}[/] {who} "
+                  f"· [dim]{chars:,} characters to Claude[/]")
+    net = result.get("network")
+    if "error" in ad:
+        in_ad = ad["error"]
+    elif ad.get("domain_joined"):
+        in_ad = f"yes, {ad['location']}"
+    else:
+        in_ad = ad and "no (not domain-joined)"
+    inv = inv or {}
+    facts([
+        ("Role", inv.get("role")), ("OS", inv.get("os")), ("Notes", inv.get("notes")),
+        ("Network", net and f"{net['name']} (VLAN {net['vlan']}): {net['purpose']}"),
+        ("In AD", in_ad), ("Last logon", ad.get("last_logon_approx")),
+    ])
+
+
+def account_result(result: dict, chars: int) -> None:
+    if not result.get("found"):
+        console.print(f"  [{AMBER}]✓[/]  [bold]{result['account']}[/]: {result['note']} "
+                      f"· [dim]{chars:,} characters to Claude[/]")
+        return
+    state = "enabled" if result["enabled"] else f"[{RED}]disabled[/]"
+    console.print(f"  [{GREEN}]✓[/]  [bold]{result['account']}[/] is a {result['type']} account, {state} "
+                  f"· [dim]{chars:,} characters to Claude[/]")
+    facts([
+        ("Where", result["location"]), ("Groups", result["groups"] or "(none besides the primary group)"),
+        ("Primary group", result["primary_group"]), ("Description", result["description"]),
+        ("Last logon", result["last_logon_approx"]),
+    ])
+
+
 def answer(text: str, rounds: int, tokens_in: int, tokens_out: int) -> None:
     console.print()
     console.print(Panel(Markdown(text), title=Text("ANSWER", style=f"bold {GREEN}"), title_align="left",
                         border_style=GREEN, box=box.ROUNDED, padding=(1, 2)))
     console.print(f"[dim]  {rounds} rounds · {tokens_in:,} tokens in · {tokens_out:,} tokens out · "
-                  f"facts from Wazuh, words from Claude[/]\n")
+                  f"facts from Wazuh and AD, words from Claude[/]\n")
 
 
 def refusal(category) -> None:

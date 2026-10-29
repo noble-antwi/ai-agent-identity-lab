@@ -80,7 +80,7 @@ function countUp(node, to) {
 }
 
 // ---------- the agent's live panel ----------
-// Stations, top to bottom: 0 Claude · 1 agent.py · 2 SSH tunnel · 3 Wazuh
+// Stations, top to bottom: 0 Claude · 1 agent.py · 2 SSH tunnel · 3 Wazuh · 4 DC01
 const panel = {
   rail: $("#rail"),
   pipe: $("#pipe"),
@@ -254,7 +254,59 @@ function drawToolCall(ev) {
     call.append(b);
   }
   c.append(call);
-  card("wazuh", "W", "Searching Wazuh through the SSH tunnel, as svc-ask-siem", "", true);
+  if (ev.name === "search_wazuh_alerts") {
+    card("wazuh", "W", "Searching Wazuh through the SSH tunnel, as svc-ask-siem", "", true);
+  } else if (ev.name === "lookup_host") {
+    card("ad", "AD", "Checking the lab inventory, then asking DC01 over LDAPS", "", true);
+  } else {
+    card("ad", "AD", "Asking DC01 over LDAPS, as svc-ask-siem", "", true);
+  }
+}
+
+// A lookup comes back as a short list of facts. Only the allow-listed fields
+// exist in it: directory.py never asked AD for anything else.
+function drawLookup(ev) {
+  const c = pending;
+  if (ev.is_error) {
+    settle(c, "DC01 could not be asked");
+    c.classList.replace("ad", "error");
+    c.append(el("div", "sub", ev.output));
+    return;
+  }
+  const r = ev.result;
+  let rows;
+  if (ev.name === "lookup_host") {
+    const inv = r.inventory || {};
+    const ad = r.active_directory || {};
+    const net = r.network;
+    settle(c, inv.name ? `${r.query}: ${inv.name}` : `${r.query}: not in the inventory`);
+    rows = [
+      ["Role", inv.role], ["OS", inv.os], ["Notes", inv.notes],
+      ["Network", net && `${net.name} (VLAN ${net.vlan}): ${net.purpose}`],
+      ["In AD", ad.error || (ad.domain_joined ? `yes, ${ad.location}` : (r.active_directory ? "no, not domain-joined" : ""))],
+      ["Last logon", ad.last_logon_approx, true],
+    ];
+  } else if (!r.found) {
+    settle(c, `${r.account}: not found`);
+    rows = [["Note", r.note]];
+  } else {
+    settle(c, `${r.account}: ${r.type} account, ${r.enabled ? "enabled" : "disabled"}`);
+    rows = [
+      ["Where", r.location, true], ["Groups", r.groups.join(", ") || "none besides the primary group"],
+      ["Primary group", r.primary_group], ["Description", r.description],
+      ["Last logon", r.last_logon_approx, true],
+    ];
+  }
+  const list = el("dl", "facts");
+  let n = 0;
+  for (const [label, value, mono] of rows) {
+    if (!value) continue;
+    const dd = el("dd", mono ? "mono" : "", String(value));
+    dd.style.animationDelay = `${n++ * 60}ms`;
+    list.append(el("dt", "", label), dd);
+  }
+  c.append(list);
+  c.append(el("div", "sub", `${ev.characters.toLocaleString()} characters to Claude · allow-listed fields only`));
 }
 
 function drawWazuh(ev) {
@@ -366,7 +418,7 @@ function handle(ev) {
           panel.state("thinking", "Round 1", "Claude is thinking", "Reading your question, its brief and the menu of tools.");
         });
       } else {
-        panel.travel([0], "data", "the alerts, nothing else", () => {
+        panel.travel([0], "data", "tool results, nothing else", () => {
           panel.mark(0, "busy");
           panel.state("writing", `Round ${ev.round}`, "Claude is writing", "It sees only what the tool returned. Never the lab itself.");
         });
@@ -379,17 +431,43 @@ function handle(ev) {
     case "tool_call": {
       drawToolCall(ev);
       const blanks = Object.values(ev.input).join(", ");
+      const wazuh = ev.name === "search_wazuh_alerts";
       panel.travel([1], "order", `order: ${blanks}`, () => {
         panel.mark(1, "active");
-        panel.state("searching", "Tool call", "Running the search", "agent.py fills the fixed query with Claude's two blanks.");
+        panel.state("searching", "Tool call", wazuh ? "Running the search" : "Running the lookup",
+          wazuh ? "agent.py fills the fixed query with Claude's two blanks." : "agent.py fills one blank in a fixed lookup. Odd characters are refused.");
       });
-      panel.travel([2, 3], "", "search, as svc-ask-siem", () => {
-        panel.mark(3, "busy");
-        panel.state("searching", "Inside the lab", "Searching Wazuh", "Certificate checked, logged in as svc-ask-siem, alerts only.");
-      });
+      if (wazuh) {
+        panel.travel([2, 3], "", "search, as svc-ask-siem", () => {
+          panel.mark(3, "busy");
+          panel.state("searching", "Inside the lab", "Searching Wazuh", "Certificate checked, logged in as svc-ask-siem, alerts only.");
+        });
+      } else {
+        panel.travel([4], "", "lookup, as svc-ask-siem", () => {
+          panel.mark(4, "busy");
+          panel.state("searching", "Inside the lab", "Asking DC01", "LDAPS on 636, certificate checked against the Biira root CA, read-only.");
+        });
+      }
       break;
     }
     case "tool_result":
+      if (ev.name === "lookup_host" || ev.name === "lookup_account") {
+        drawLookup(ev);
+        if (ev.is_error) {
+          panel.then(() => {
+            panel.mark(4, "fail");
+            panel.packet.className = "packet on error";
+            panel.carry.textContent = "an error";
+            panel.state("error", "Tool error", "DC01 unreachable", "The error goes back to Claude as it is.");
+          });
+        } else {
+          panel.travel([1], "data", "allow-listed fields only", () => {
+            panel.mark(1, "active");
+            panel.state("searching", "Context in", "Lookup answered", "Only named fields come back. Descriptions are cleaned of secrets.");
+          });
+        }
+        break;
+      }
       drawWazuh(ev);
       if (ev.is_error) {
         panel.then(() => {
@@ -412,7 +490,7 @@ function handle(ev) {
       panel.travel([1], "answer", "the answer", () => {
         panel.mark(1, "done");
         panel.packet.classList.remove("on");
-        panel.state("done", "Done", "Answer ready", "Facts from Wazuh, words from Claude. Read it like a junior analyst's report.");
+        panel.state("done", "Done", "Answer ready", "Facts from Wazuh and AD, words from Claude. Read it like a junior analyst's report.");
         countUp($("#m-tokens"), ev.tokens_in + ev.tokens_out);
       });
       break;

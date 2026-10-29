@@ -350,9 +350,14 @@ body::after {
 .card.think.live .icon { animation: pulse 1.2s ease-out infinite; }
 .card.tool { border-color: rgba(232, 163, 61, 0.35); }
 .card.tool .icon { background: var(--amber); color: #2A1A02; }
-.card.wazuh { border-color: rgba(63, 182, 139, 0.35); }
-.card.wazuh .icon { background: var(--green); color: #052117; }
-.card.wazuh.live .icon { animation: pulse-green 1.2s ease-out infinite; }
+.card.wazuh, .card.ad { border-color: rgba(63, 182, 139, 0.35); }
+.card.wazuh .icon, .card.ad .icon { background: var(--green); color: #052117; }
+.card.wazuh.live .icon, .card.ad.live .icon { animation: pulse-green 1.2s ease-out infinite; }
+.card.ad .icon { font-size: 12px; font-weight: 800; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 5px 16px; margin: 12px 0 0; font-size: 13px; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; overflow-wrap: anywhere; animation: rise 0.45s var(--ease) both; }
+.facts dd.mono { font-family: var(--mono); font-size: 12.5px; }
 .card.answer { border-color: rgba(63, 182, 139, 0.55); box-shadow: 0 0 0 1px rgba(63, 182, 139, 0.12), 0 24px 60px rgba(0, 0, 0, 0.35); }
 .card.answer .icon { background: var(--green); color: #052117; }
 .card.error { border-color: rgba(229, 96, 77, 0.6); }
