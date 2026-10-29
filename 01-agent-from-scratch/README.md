@@ -267,6 +267,13 @@ nobody else. The "last logon" is this very sign-in, recorded under the agent's
 own name. (First version of the script; it now prints exactly what Claude would
 receive.)*
 
+![The same account reading the domain's built-in Administrator](images/agent-21-any-account-reads-ad.png)
+
+*The same account, with no groups and no grants, reading the domain's built-in
+`Administrator`: where it lives, when it last signed in, and its group list
+(blurred here). Any signed-in account can map who holds power in AD. That is
+why the agent's tool, not AD, decides which attributes it reads.*
+
 Then the two tools, called directly with no AI involved:
 
 | Call | What came back |
