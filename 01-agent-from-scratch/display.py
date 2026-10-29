@@ -34,10 +34,11 @@ def level_style(level: int) -> str:
     return "dim"
 
 
-def header(question: str, model: str) -> None:
+def header(question: str, model: str, loop: str = "hand-written") -> None:
     title = Text("ASK MY SIEM", style=f"bold {CYAN}")
     body = Text.assemble(("Question  ", "dim"), (question, "bold white"),
                          ("\nModel     ", "dim"), (model, "white"),
+                         ("\nLoop      ", "dim"), (loop, "white"),
                          ("\nTools     ", "dim"), ("search_wazuh_alerts, lookup_host, lookup_account", "white"),
                          ("\nIdentity  ", "dim"), ("svc-ask-siem, read-only, in Wazuh and in AD", "white"))
     console.print()

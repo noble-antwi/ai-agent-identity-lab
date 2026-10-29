@@ -361,10 +361,11 @@ def run_agent(question: str):
 
 
 # 6. The terminal face: turn each event into something drawn by display.py.
-def ask(question: str) -> None:
-    display.header(question, MODEL)
+def ask(question: str, loop=run_agent) -> None:
+    """loop: which loop to watch. This file's, or the Tool Runner's (agent_runner.py)."""
+    display.header(question, MODEL, "Tool Runner (SDK)" if loop is not run_agent else "hand-written")
     spinner = None
-    for event in run_agent(question):
+    for event in loop(question):
         if spinner:  # Whatever we were waiting for has arrived.
             spinner.stop()
             spinner = None
