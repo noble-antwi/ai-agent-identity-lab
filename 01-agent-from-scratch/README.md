@@ -332,6 +332,38 @@ weeks stale and refused to read too much into it.
 | Optional `source_ip` filter | Impossible to ask "what did this address do?" | `::1` on WKS01 this week returns its 58 local logons; `192.168.20.3` returns 0 this week, though over 30 days it appears in 154 alerts. Zero alerts is not proof it was idle: its successful scanner logons are silenced by design |
 | `source_ip` must parse as an IP address | | `not-an-ip` and `*` are refused before any search runs |
 
+### The rerun, after the fixes
+
+Same question, same model, the next afternoon.
+
+![Round 1 used the new filter on its own](images/agent-26-rerun-source-ip-filter.png)
+
+*Round 1: nobody told Claude about the new `source_ip` blank, but it read the
+menu and used it: zero alerts from SCAN01 this week. Round 2 widened the search
+to all sources, and the examples now cover 35 rules instead of one.*
+
+![Round 3: the machine and the account](images/agent-27-rerun-lookups.png)
+
+![The answer](images/agent-28-rerun-answer.png)
+
+*It found something nobody asked about: WKS01's Wazuh agent was silent for five
+days (disconnected 24 Oct, an unexpected shutdown logged on restart 29 Oct), so
+any scan in that gap could not have reached the SIEM. It also kept "zero alerts"
+apart from "nothing happened".*
+
+![What to check next, and the cost](images/agent-29-rerun-next-steps-tokens.png)
+
+| | Run before the fixes | Rerun |
+|---|---|---|
+| Tokens in | 39,295 | **14,719** (63% fewer) |
+| Rules represented in the examples | 1 | 35 |
+| Could answer "what did 192.168.20.3 do?" | No | Yes: nothing that reached the alerts this week |
+| Noticed the agent outage | No | Yes |
+
+Its fifth check, whether the IP filter looks in the right field, is fair
+skepticism. It does: over 30 days `data.win.eventdata.ipAddress` holds
+`192.168.20.3` in 154 WKS01 alerts.
+
 ![First attempt: the tunnel was closed](images/agent-22-stage2-tunnel-closed.png)
 
 *The first attempt, with the SSH tunnel closed. The Wazuh search failed, but
