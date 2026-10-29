@@ -285,6 +285,49 @@ Then the two tools, called directly with no AI involved:
 | `lookup_account("CORP\WKS01$")` | A computer account, primary group Domain Computers |
 | `lookup_account("*")` | Refused: not a valid account name. No search was run |
 
+### Stage 2, first agent run: it named the scanner
+
+The question run one could not answer: *"Who or what is 192.168.20.3, and what
+has it been doing on WKS01 this week?"*
+
+![Round 1: two tools at once](images/agent-23-stage2-lookups-and-search.png)
+
+*Round 1: Claude ordered two tools in one round, the machine lookup and the
+alert search, because neither depended on the other. 192.168.20.3 comes back as
+SCAN01, the Greenbone scanner.*
+
+![The answer, with every fact's source named](images/agent-24-stage2-answer.png)
+
+*Round 2 looked up the scanner's account in AD; round 3 wrote the answer. Each
+section says where its facts came from: the hand-kept inventory, or AD live.*
+
+![What a human should check next](images/agent-25-stage2-next-steps.png)
+
+*It said plainly what it could not see, and handed the rest to a human.*
+
+**What it got right:** it named the scanner, its account and its job; it kept
+"inventory says" apart from "AD says"; it knew AD's last-logon value can be two
+weeks stale and refused to read too much into it.
+
+**What it could not do, and why that is the tool's fault, not Claude's:**
+
+- **The 50 example slots all went to one rule.** Results are sorted by level, so
+  50 copies of the hourly level-12 rule 92058 filled every slot. That was
+  roughly 30,000 of the 39,000 input tokens, and it left nothing for the logon
+  events that would answer the question.
+- **The search cannot filter by IP address.** "What did 192.168.20.3 do?" needs
+  exactly that.
+- **The scanner's own logons are not alerts at all.** The lab's tuning rule
+  100020 silences `svc-greenbone` logons from SCAN01 (level 0), so they never
+  reach the alerts index, only the raw archive, which the agent is denied by
+  design. Quieter alerts for humans mean less evidence for the agent: a
+  trade-off worth knowing about.
+
+![First attempt: the tunnel was closed](images/agent-22-stage2-tunnel-closed.png)
+
+*The first attempt, with the SSH tunnel closed. The Wazuh search failed, but
+the lookups still worked: they go to DC01 directly, not through the tunnel.*
+
 ## What I learned
 
 - **An agent is three parts: a model, a loop, and tools.** The model never runs
